@@ -20,7 +20,7 @@ const supabase = createClient(
 
 // Your CELO wallet address to receive payments
 const GAME_WALLET_ADDRESS = import.meta.env.VITE_GAME_WALLET_ADDRESS || '0xde25bf927c839355c66ee3551dae8a143bf85f9a';
-const GAME_PRICE = import.meta.env.VITE_GAME_PRICE || '0.1';
+const GAME_PRICE = import.meta.env.VITE_GAME_PRICE || '0.1 USDT';
 
 const Home = () => {
     const { toast } = useToast();
@@ -165,7 +165,7 @@ const Home = () => {
                 const currentAccount = walletState.account;
                 
                 if (!currentAccount) {
-                    throw new Error('Failed to connect wallet. Please ensure you are using the app in Farcaster.');
+                    throw new Error('Failed to connect wallet. Please ensure you are using the app in MiniPay.');
                 }
                 
                 console.log('✅ Wallet connected, preparing payment...');
