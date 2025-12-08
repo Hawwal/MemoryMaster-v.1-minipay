@@ -11,7 +11,6 @@ import { GameScreen } from '@/components/GameScreen';
 import { PaymentModal } from '@/components/PaymentModal';
 import { Leaderboard } from '@/components/Leaderboard';
 import { createClient } from '@supabase/supabase-js';
-import sdk from '@farcaster/frame-sdk';
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -43,35 +42,7 @@ const Home = () => {
     const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
     const [isProcessingPayment, setIsProcessingPayment] = useState(false);
     const [isPreparingPayment, setIsPreparingPayment] = useState(false);
-
-    // Initialize Farcaster SDK
-    useEffect(() => {
-        const initializeFarcasterSdk = async () => {
-            try {
-                await sdk.actions.ready();
-                console.log('✅ Farcaster SDK ready');
-                
-                // Get Farcaster user info
-                const context = await sdk.context;
-                if (context?.user) {
-                    setUserName(context.user.displayName || context.user.username || 'Player');
-                    setUserHandle(context.user.username || 'player');
-                    
-                    // Save to localStorage
-                    localStorage.setItem('userName', context.user.displayName || context.user.username || 'Player');
-                    localStorage.setItem('userHandle', context.user.username || 'player');
-                    localStorage.setItem('fid', context.user.fid.toString());
-                    
-                    console.log('👤 Farcaster user:', context.user.username);
-                }
-            } catch (error) {
-                console.error('Error initializing Farcaster SDK:', error);
-            }
-        };
-
-        initializeFarcasterSdk();
-    }, []);
-
+   
     useEffect(() => {
         // Load user data from localStorage (fallback)
         const savedUserName = localStorage.getItem('userName');
@@ -277,7 +248,7 @@ const Home = () => {
             if (success) {
                 toast({
                     title: "Payment Successful!",
-                    description: `${GAME_PRICE} CELO sent successfully. Starting game...`
+                    description: `${GAME_PRICE} USDT sent successfully. Starting game...`
                 });
                 
                 // Wait a moment for user to see success message
@@ -501,7 +472,7 @@ const Home = () => {
                                             {isLoadingBalance ? (
                                                 <span className="text-sm text-muted-foreground">Loading...</span>
                                             ) : (
-                                                <span className="text-sm font-mono">{balance} CELO</span>
+                                                <span className="text-sm font-mono">{balance} USDT</span>
                                             )}
                                         </div>
                                     </div>
