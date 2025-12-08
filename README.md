@@ -2,13 +2,13 @@
 
 <img width="277" height="146" alt="Memory Master Logo SM" src="https://github.com/user-attachments/assets/45eb54fe-0fb6-4868-8dbb-b2c1d90a30e9" />
 
-**Memory Master** is a fast-paced pattern challenge game that combines cognitive training with competitive gaming. Built as a Farcaster Mini App with Noah AI on the CELO blockchain, it offers players an engaging way to improve their visual memory while competing on a global leaderboard.
+**Memory Master** is a fast-paced pattern challenge game that combines cognitive training with competitive gaming. Built as a Mini App with Noah AI on the CELO blockchain, it offers players an engaging way to improve their visual memory while competing on a global leaderboard.
 
 ## 🎮 About
 
 Memory Master combines visual memory training with competitive gameplay. Players must observe randomly generated Tetris-like patterns, memorize their positions, and accurately recreate them within strict time limits. As levels progress, patterns become larger and more complex, pushing your memory to its limits.
 
-Built as a Farcaster Mini App with CELO blockchain integration, Memory Master offers a unique blend of cognitive challenge and Web3 gaming.
+Built as a Mini App with CELO blockchain integration, Memory Master offers a unique blend of cognitive challenge and Web3 gaming.
 
 ---
 
@@ -16,7 +16,7 @@ Built as a Farcaster Mini App with CELO blockchain integration, Memory Master of
 
 ### Game Flow
 
-1. **Payment Entry**: Pay 0.1 CELO to start a new game session (3 lives included)
+1. **Payment Entry**: Pay 0.1 USDT to start a new game session (3 lives included)
 2. **Memorization Phase**: 
    - A pattern of green boxes appears on an 8×8 grid
    - Memorize the shape's position (7-10 seconds depending on level)
@@ -40,7 +40,7 @@ Built as a Farcaster Mini App with CELO blockchain integration, Memory Master of
 - **Click/Tap**: Select boxes during recreation phase
 - **Submit Button**: Submit your answer early (if confident)
 - **Menu Button**: Pause game and access settings
-- **Retry**: Pay 0.1 CELO to continue from where you left off
+- **Retry**: Pay 0.1 USDT to continue from where you left off
 
 ---
 
@@ -49,7 +49,7 @@ Built as a Farcaster Mini App with CELO blockchain integration, Memory Master of
 ### To Play
 
 - **Farcaster Account**: Required for authentication
-- **CELO Wallet**: 0.1 CELO per game session
+- **CELO Wallet**: 0.1 USDT per game session
 - **Device**: Desktop or mobile browser
 - **Connection**: Internet connection required
 
@@ -72,8 +72,8 @@ Built as a Farcaster Mini App with CELO blockchain integration, Memory Master of
 - ✅ **Auto-Submit** - Automatic validation when timer expires
 
 ### Web3 Integration
-- 🔗 **Farcaster Authentication** - Seamless login with Farcaster ID
-- 💰 **CELO Payments** - 0.1 CELO per game using native wallet
+- 🔗 **Minipay Authentication** - Seamless login with Minipay walletID
+- 💰 **CELO Payments** - 0.1 USDT per game using native wallet
 - 🏆 **Global Leaderboard** - Compete with players worldwide
 - 🔄 **Continue Feature** - Pay to resume at your highest level
 
@@ -117,7 +117,7 @@ Built as a Farcaster Mini App with CELO blockchain integration, Memory Master of
 - Lose 1 life on any mistake (<100% accuracy)
 - Lose 1 life if timer expires
 - **Game Over** at 0 lives
-- **Continue option**: Pay 0.1 CELO to resume with 3 lives at your current level
+- **Continue option**: Pay 0.1 USDT to resume with 3 lives at your current level
 
 ---
 
@@ -133,8 +133,8 @@ pnpm
 ### Clone Repository
 
 ```bash
-git clone https://github.com/hawwal/MemoryMaster-v.1.git
-cd MemoryMaster-v.1
+git clone https://github.com/hawwal/MemoryMaster-v.1-minipay.git
+cd MemoryMaster-v.1-minipay
 ```
 
 ### Install Dependencies
@@ -148,7 +148,7 @@ pnpm install
 Create a `.env` file:
 
 ```env
-VITE_FARCASTER_APP_ID=your_app_id
+VITE_MINIPAY_APP_ID=your_app_id
 VITE_CELO_RPC_URL=your_rpc_url
 # Add other required environment variables
 ```
@@ -253,7 +253,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📧 Contact & Support
 
-- **Issues**: [GitHub Issues](https://github.com/hawwal/MemoryMaster-v.1/issues)
+- **Issues**: [GitHub Issues](https://github.com/hawwal/MemoryMaster-v.1-minipay/issues)
 - **Email**: hawwal@blaqkstereo.com
 - **Farcaster DMs**: [@Hawwal](https://farcaster.xyz/hawwal)
 - [@itshawwal](https://twitter.com/itshawwal)
@@ -271,9 +271,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📊 Stats
 
-![GitHub stars](https://img.shields.io/github/stars/yourusername/MemoryMaster-v.1?style=social)
-![GitHub forks](https://img.shields.io/github/forks/hawwal/MemoryMaster-v.1?style=social)
-![GitHub issues](https://img.shields.io/github/issues/hawwal/MemoryMaster-v.1)
+![GitHub stars](https://img.shields.io/github/stars/yourusername/MemoryMaster-v.1-minipay?style=social)
+![GitHub forks](https://img.shields.io/github/forks/hawwal/MemoryMaster-v.1-minipay?style=social)
+![GitHub issues](https://img.shields.io/github/issues/hawwal/MemoryMaster-v.1-minipay)
 ![License](https://img.shields.io/github/license/hawwal/MemoryMaster-v.1)
 
 ---
