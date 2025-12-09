@@ -1,5 +1,5 @@
 // Location: src/providers/WagmiProvider.tsx
-// MiniPay Wallet Configuration - CELO Mainnet Only
+// MiniPay + MetaMask Wallet Configuration - CELO Mainnet Only
 
 import { WagmiProvider, createConfig, http } from 'wagmi';
 import { celo } from 'wagmi/chains';
@@ -7,7 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactNode } from 'react';
 import { injected } from 'wagmi/connectors';
 
-// MiniPay Configuration - Uses injected connector (MiniPay's built-in wallet)
+// MiniPay Configuration
+// Supports both MiniPay and MetaMask on CELO Mainnet
 const config = createConfig({
   chains: [celo], // ONLY CELO Mainnet
   transports: {
@@ -15,17 +16,14 @@ const config = createConfig({
   },
   connectors: [
     injected({
-      // MiniPay injects window.ethereum automatically
-      target: 'metaMask', // MiniPay is MetaMask-compatible
+      // This will detect MiniPay, MetaMask, or any injected wallet
+      shimDisconnect: false,
     }),
   ],
-  multiInjectedProviderDiscovery: false,
+  multiInjectedProviderDiscovery: true, // Allow multiple wallet detection
 });
 
-console.log('🔧 MiniPay Wagmi Config:', {
-  chains: config.chains.map(c => ({ id: c.id, name: c.name })),
-  connector: 'MiniPay Injected Wallet',
-});
+console.log('🔧 Wallet Config: MiniPay + MetaMask on CELO Mainnet');
 
 // React Query client
 const queryClient = new QueryClient({

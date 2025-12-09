@@ -5,7 +5,6 @@ import { Toaster } from '@/components/ui/toaster';
 import { WalletService, type WalletState } from '@/lib/walletService';
 import { useToast } from '@/hooks/use-toast';
 import CopyToClipboard from 'react-copy-to-clipboard';
-import { getNetworkConfig } from '@/lib/config';
 import { SplashScreen } from '@/components/SplashScreen';
 import { GameScreen } from '@/components/GameScreen';
 import { PaymentModal } from '@/components/PaymentModal';
@@ -18,9 +17,9 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-// Your CELO wallet address to receive payments
+// Game wallet address to receive USDT payments
 const GAME_WALLET_ADDRESS = import.meta.env.VITE_GAME_WALLET_ADDRESS || '0xde25bf927c839355c66ee3551dae8a143bf85f9a';
-const GAME_PRICE = import.meta.env.VITE_GAME_PRICE || '0.1 USDT';
+const GAME_PRICE = import.meta.env.VITE_GAME_PRICE || '0.1'; // 0.1 USDT
 
 const Home = () => {
     const { toast } = useToast();
@@ -42,14 +41,38 @@ const Home = () => {
     const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
     const [isProcessingPayment, setIsProcessingPayment] = useState(false);
     const [isPreparingPayment, setIsPreparingPayment] = useState(false);
-   
+    const [walletType, setWalletType] = useState<'none' | 'minipay' | 'metamask'>('none');
+
+    // Detect wallet type on mount
     useEffect(() => {
-        // Load user data from localStorage (fallback)
-        const savedUserName = localStorage.getItem('userName');
-        const savedUserHandle = localStorage.getItem('userHandle');
+        const detectWallet = () => {
+            if (typeof window.ethereum === 'undefined') {
+                setWalletType('none');
+                return;
+            }
+            
+            if ((window.ethereum as any).isMiniPay) {
+                console.log('✅ MiniPay detected');
+                setWalletType('minipay');
+            } else if ((window.ethereum as any).isMetaMask) {
+                console.log('✅ MetaMask detected');
+                setWalletType('metamask');
+            } else {
+                console.log('✅ Generic wallet detected');
+                setWalletType('metamask'); // Treat as MetaMask-compatible
+            }
+        };
+
+        detectWallet();
+    }, []);
+
+    useEffect(() => {
+        // Load user data from localStorage
+        const savedUserName = localStorage.getItem('userName') || 'Player';
+        const savedUserHandle = localStorage.getItem('userHandle') || 'player';
         
-        if (savedUserName) setUserName(savedUserName);
-        if (savedUserHandle) setUserHandle(savedUserHandle);
+        setUserName(savedUserName);
+        setUserHandle(savedUserHandle);
 
         const walletService = new WalletService({
             onToast: (title: string, description: string) => {
@@ -60,7 +83,7 @@ const Home = () => {
         walletService.onStateUpdate(setWalletState);
         walletServiceRef.current = walletService;
 
-        // Load leaderboard data on mount
+        // Load leaderboard
         fetchLeaderboard();
 
         return () => {
@@ -68,7 +91,7 @@ const Home = () => {
         };
     }, [toast]);
 
-    // Helper function to format dates
+    // Format dates
     const formatDate = (dateString: string): string => {
         const date = new Date(dateString);
         const now = new Date();
@@ -82,7 +105,7 @@ const Home = () => {
         return date.toLocaleDateString();
     };
 
-    // Fetch leaderboard from Supabase
+    // Fetch leaderboard
     const fetchLeaderboard = async () => {
         setIsLoadingLeaderboard(true);
         try {
@@ -93,7 +116,6 @@ const Home = () => {
                 .order('level', { ascending: false })
                 .limit(100);
 
-            // Apply time filters
             const now = new Date();
             if (leaderboardFilter === 'daily') {
                 const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -104,10 +126,8 @@ const Home = () => {
             }
 
             const { data, error } = await query;
-
             if (error) throw error;
 
-            // Format entries with ranks
             const entries = (data || []).map((entry: any, index: number) => ({
                 rank: index + 1,
                 username: entry.username,
@@ -128,13 +148,12 @@ const Home = () => {
         }
     };
 
-    // Re-fetch when filter changes
     useEffect(() => {
         fetchLeaderboard();
     }, [leaderboardFilter]);
 
-    const connectWallet = () => {
-        walletServiceRef.current?.connectWallet();
+    const connectWallet = async () => {
+        await walletServiceRef.current?.connectWallet();
     };
 
     const disconnectWallet = () => {
@@ -145,35 +164,25 @@ const Home = () => {
         return walletServiceRef.current?.formatAddress(address) || '';
     };
 
-    /**
-     * CRITICAL FIX: Ensure wallet is connected before showing payment
-     */
     const handleStartGame = async () => {
-        // Check if wallet is already connected
         if (!walletState.account) {
-            console.log('⚠️ Wallet not connected, connecting now...');
+            console.log('⚠️ Wallet not connected, prompting connection...');
             setIsPreparingPayment(true);
             
             try {
-                // Connect the wallet first
                 await walletServiceRef.current?.connectWallet();
+                await new Promise(resolve => setTimeout(resolve, 1500));
                 
-                // Wait for connection state to update
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                // Check if connection was successful by getting fresh state
-                const currentAccount = walletState.account;
-                
-                if (!currentAccount) {
-                    throw new Error('Failed to connect wallet. Please ensure you are using the app in MiniPay.');
+                if (!walletState.account) {
+                    throw new Error('Failed to connect wallet. Please try again.');
                 }
                 
-                console.log('✅ Wallet connected, preparing payment...');
+                console.log('✅ Wallet connected');
             } catch (error: any) {
                 console.error('Connection failed:', error);
                 toast({
                     title: "Connection Failed",
-                    description: error.message || "Failed to connect wallet. Please try again.",
+                    description: error.message || "Failed to connect wallet",
                     variant: "destructive"
                 });
                 setIsPreparingPayment(false);
@@ -181,35 +190,27 @@ const Home = () => {
             }
         }
 
-        // Wallet is connected, prepare for payment
         setIsPreparingPayment(true);
         
         try {
-            console.log('🔄 Preparing payment - ensuring CELO mainnet connection...');
+            console.log('🔄 Preparing payment...');
             
-            // Force a network check to switch to CELO mainnet if needed
             await walletServiceRef.current?.checkNetwork();
+            await new Promise(resolve => setTimeout(resolve, 800));
             
-            // Wait for network switch to complete
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Refresh balance from CELO mainnet
             if (walletState.account) {
                 await walletServiceRef.current?.fetchBalance(walletState.account);
             }
             
-            // Wait for balance to load
             await new Promise(resolve => setTimeout(resolve, 500));
             
-            console.log('✅ Payment preparation complete. Current balance:', walletState.balance, 'CELO');
-            
-            // Now show payment modal
+            console.log('✅ Ready. USDT Balance:', walletState.balance);
             setGameState('payment');
         } catch (error: any) {
             console.error('Error preparing payment:', error);
             toast({
-                title: "Connection Error",
-                description: "Failed to prepare payment. Please ensure you're connected to CELO Mainnet.",
+                title: "Error",
+                description: "Failed to prepare payment",
                 variant: "destructive"
             });
         } finally {
@@ -218,28 +219,26 @@ const Home = () => {
     };
 
     const handlePayment = async () => {
-        console.log('=== PAYMENT HANDLER START ===');
-        console.log('Current wallet state:', walletState);
+        console.log('=== USDT PAYMENT START ===');
+        console.log('Wallet state:', walletState);
+        console.log('Game wallet:', GAME_WALLET_ADDRESS);
+        console.log('Amount:', GAME_PRICE, 'USDT');
         
         setIsProcessingPayment(true);
-
+        
         try {
-            // Ensure wallet is still connected
-            if (!walletState.account) {
-                throw new Error('Wallet disconnected. Please reconnect and try again.');
+            if (!GAME_WALLET_ADDRESS || GAME_WALLET_ADDRESS === '0xYourWalletAddressHere') {
+                throw new Error('Game wallet not configured');
+            }
+            
+            if (walletState.account.toLowerCase() === GAME_WALLET_ADDRESS.toLowerCase()) {
+                throw new Error('Cannot send to your own wallet');
             }
 
-            // Log current state before payment
-            console.log('💰 [handlePayment] Current state:');
-            console.log('  - Account:', walletState.account);
-            console.log('  - Game Wallet:', GAME_WALLET_ADDRESS);
-            console.log('  - Network:', walletState.currentNetwork);
-            console.log('  - Balance:', walletState.balance, 'CELO');
-            console.log('  - Game Price:', GAME_PRICE, 'CELO');
+            if (!walletState.account) {
+                throw new Error('Wallet disconnected');
+            }
 
-            // Process actual CELO payment with Divvi tracking
-            // The sendPayment method will handle all balance checks internally
-            console.log('📤 [handlePayment] Calling sendPayment...');
             const success = await walletServiceRef.current?.sendPayment(
                 GAME_WALLET_ADDRESS,
                 GAME_PRICE
@@ -251,7 +250,6 @@ const Home = () => {
                     description: `${GAME_PRICE} USDT sent successfully. Starting game...`
                 });
                 
-                // Wait a moment for user to see success message
                 setTimeout(() => {
                     setIsProcessingPayment(false);
                     setGameState('game');
@@ -260,10 +258,10 @@ const Home = () => {
                 throw new Error('Payment failed');
             }
         } catch (error: any) {
-            console.error('❌ [handlePayment] Payment error:', error);
+            console.error('❌ Payment error:', error);
             toast({
                 title: "Payment Failed",
-                description: error.message || "Unable to process payment. Please try again.",
+                description: error.message || "Unable to process payment",
                 variant: "destructive"
             });
             setIsProcessingPayment(false);
@@ -278,11 +276,9 @@ const Home = () => {
         setFinalScore(score);
         setFinalLevel(level);
         
-        // Submit score to Supabase
         try {
             const fid = localStorage.getItem('fid') || `guest_${Date.now()}`;
             
-            // Check if user already has a score
             const { data: existing, error: fetchError } = await supabase
                 .from('leaderboard')
                 .select('*')
@@ -294,7 +290,6 @@ const Home = () => {
             }
 
             if (existing) {
-                // Update if new score is higher
                 if (score > existing.score || (score === existing.score && level > existing.level)) {
                     const { error: updateError } = await supabase
                         .from('leaderboard')
@@ -308,10 +303,9 @@ const Home = () => {
                         .eq('fid', fid);
 
                     if (updateError) throw updateError;
-                    console.log('✅ Score updated successfully');
+                    console.log('✅ Score updated');
                 }
             } else {
-                // Insert new entry
                 const { error: insertError } = await supabase
                     .from('leaderboard')
                     .insert({
@@ -326,26 +320,23 @@ const Home = () => {
                     });
 
                 if (insertError) throw insertError;
-                console.log('✅ Score submitted successfully');
+                console.log('✅ Score submitted');
             }
             
-            // Refresh leaderboard to show updated data
             await fetchLeaderboard();
         } catch (error) {
-            console.error('❌ Error submitting score:', error);
+            console.error('❌ Score submission error:', error);
         }
         
         setGameState('leaderboard');
     };
 
     const { account, currentNetwork, isConnecting, balance, isLoadingBalance } = walletState;
-    const currentConfig = getNetworkConfig();
 
     if (gameState === 'splash') {
         return (
             <div className="relative">
                 <SplashScreen onStartGame={handleStartGame} />
-                {/* Show loading overlay when preparing payment */}
                 {isPreparingPayment && (
                     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
                         <div className="bg-card p-8 rounded-xl shadow-2xl max-w-sm mx-4">
@@ -354,7 +345,7 @@ const Home = () => {
                                 <div className="text-center">
                                     <p className="text-lg font-semibold text-foreground mb-1">Preparing Payment</p>
                                     <p className="text-sm text-muted-foreground">
-                                        {!account ? 'Connecting wallet...' : 'Switching to CELO Mainnet...'}
+                                        {!account ? 'Connecting wallet...' : 'Checking USDT balance...'}
                                     </p>
                                 </div>
                             </div>
@@ -422,89 +413,105 @@ const Home = () => {
     return (
         <div className="min-h-screen bg-background flex items-center justify-center">
             <div className="container mx-auto px-4 max-w-md">
-                <div className="bg-card rounded-xl shadow-lg pt-3">
-                    <div className="text-center">
-                        <div className="flex items-center justify-center mt-5">
+                <div className="bg-card rounded-xl shadow-lg p-6">
+                    <div className="text-center mb-6">
+                        <div className="flex items-center justify-center mb-2">
                             <Wave className="w-8 h-8 text-purple-500 mr-2" />
-                            <h1 className="text-3xl font-bold text-foreground">Celo Wallet</h1>
+                            <h1 className="text-3xl font-bold text-foreground">
+                                {walletType === 'minipay' ? 'MiniPay' : walletType === 'metamask' ? 'MetaMask' : 'Wallet'}
+                            </h1>
                         </div>
-                        <p className="text-muted-foreground">Connect to Celo network</p>
+                        <p className="text-muted-foreground">USDT on Celo Mainnet</p>
                     </div>
                     
-                    <div className="flex items-center justify-center p-4">
-                        <div className="max-w-md w-full">
-                            {!account ? (
-                                <div className="rounded-2xl p-2 text-center">
-                                    <button 
-                                        className="w-full bg-primary text-primary-foreground font-medium py-3 px-3 rounded-xl mb-3 flex items-center justify-center gap-3 disabled:opacity-50 transition-all"
-                                        onClick={connectWallet}
-                                        disabled={isConnecting}
-                                    >
-                                        <Wallet size={20} />
-                                        {isConnecting ? 'Connecting...' : 'Connect'}
-                                    </button>
+                    {!account ? (
+                        <div className="space-y-3">
+                            <button 
+                                className="w-full bg-primary text-primary-foreground font-medium py-3 px-4 rounded-xl flex items-center justify-center gap-3 disabled:opacity-50"
+                                onClick={connectWallet}
+                                disabled={isConnecting}
+                            >
+                                <Wallet size={20} />
+                                {isConnecting ? 'Connecting...' : `Connect ${walletType === 'minipay' ? 'MiniPay' : walletType === 'metamask' ? 'MetaMask' : 'Wallet'}`}
+                            </button>
+                            
+                            {walletType === 'none' && (
+                                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                                    <p className="text-sm text-amber-600 dark:text-amber-400">
+                                        ⚠️ No wallet detected. Please use:
+                                    </p>
+                                    <ul className="text-sm text-amber-600 dark:text-amber-400 mt-2 ml-4 space-y-1">
+                                        <li>• MiniPay app (recommended)</li>
+                                        <li>• MetaMask on CELO Mainnet</li>
+                                    </ul>
                                 </div>
-                            ) : (
-                                <div className="bg-muted rounded-2xl p-8">
-                                    <h3 className="text-game-success font-medium mb-4 flex items-center gap-2">
-                                        <CheckCircle size={20} />
-                                        Wallet Connected
-                                    </h3>
-                                    
-                                    <div className="mb-4">
-                                        <label className="text-sm font-medium block mb-1">Account Address:</label>
-                                        <div className="flex items-center bg-background p-2 rounded gap-2">
-                                            <code className="flex-1 text-sm">{formatAddress(account)}</code>
-                                            <CopyToClipboard 
-                                                text={account}
-                                                onCopy={() => toast({ title: "Copied!", description: "Address copied to clipboard" })}
-                                            >
-                                                <button className="p-1.5 border border-border rounded hover:bg-accent">
-                                                    <Copy size={14} />
-                                                </button>
-                                            </CopyToClipboard>
-                                        </div>
-                                    </div>
-
-                                    <div className="mb-4">
-                                        <label className="text-sm font-medium block mb-1">Balance:</label>
-                                        <div className="flex items-center bg-background p-2 rounded border">
-                                            {isLoadingBalance ? (
-                                                <span className="text-sm text-muted-foreground">Loading...</span>
-                                            ) : (
-                                                <span className="text-sm font-mono">{balance} USDT</span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {currentNetwork && (
-                                        <div className="mb-4">
-                                            <label className="text-sm font-medium block mb-1">Network:</label>
-                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
-                                                currentNetwork === currentConfig.name
-                                                    ? 'bg-game-success/20 text-game-success' 
-                                                    : 'bg-game-error/20 text-game-error'
-                                            }`}>
-                                                {currentNetwork === currentConfig.name ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
-                                                {currentNetwork}
-                                            </span>
-                                        </div>
-                                    )}
-
-                                    <hr className="my-4" />
-
-                                    <div className="space-y-2">    
-                                        <button 
-                                            className="w-full bg-game-error hover:bg-game-error/90 text-white font-medium py-3 px-4 rounded-lg flex items-center justify-center gap-2"
-                                            onClick={disconnectWallet}
-                                        >
-                                            Disconnect Wallet
-                                        </button>
-                                    </div>
+                            )}
+                            
+                            {walletType === 'metamask' && (
+                                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                                    <p className="text-sm text-blue-600 dark:text-blue-400">
+                                        ℹ️ Make sure MetaMask is connected to CELO Mainnet (Chain ID: 42220)
+                                    </p>
                                 </div>
                             )}
                         </div>
-                    </div>
+                    ) : (
+                        <div className="bg-muted rounded-xl p-6">
+                            <h3 className="text-game-success font-medium mb-4 flex items-center gap-2">
+                                <CheckCircle size={20} />
+                                {walletType === 'minipay' ? 'MiniPay' : 'MetaMask'} Connected
+                            </h3>
+                            
+                            <div className="mb-4">
+                                <label className="text-sm font-medium block mb-1">Account:</label>
+                                <div className="flex items-center bg-background p-2 rounded gap-2">
+                                    <code className="flex-1 text-sm">{formatAddress(account)}</code>
+                                    <CopyToClipboard 
+                                        text={account}
+                                        onCopy={() => toast({ title: "Copied!", description: "Address copied" })}
+                                    >
+                                        <button className="p-1.5 border border-border rounded hover:bg-accent">
+                                            <Copy size={14} />
+                                        </button>
+                                    </CopyToClipboard>
+                                </div>
+                            </div>
+
+                            <div className="mb-4">
+                                <label className="text-sm font-medium block mb-1">USDT Balance:</label>
+                                <div className="flex items-center bg-background p-2 rounded border">
+                                    {isLoadingBalance ? (
+                                        <span className="text-sm text-muted-foreground">Loading...</span>
+                                    ) : (
+                                        <span className="text-sm font-mono">{balance} USDT</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {currentNetwork && (
+                                <div className="mb-4">
+                                    <label className="text-sm font-medium block mb-1">Network:</label>
+                                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
+                                        currentNetwork === 'Celo Mainnet'
+                                            ? 'bg-game-success/20 text-game-success' 
+                                            : 'bg-game-error/20 text-game-error'
+                                    }`}>
+                                        {currentNetwork === 'Celo Mainnet' ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                                        {currentNetwork}
+                                    </span>
+                                </div>
+                            )}
+
+                            <hr className="my-4" />
+
+                            <button 
+                                className="w-full bg-game-error hover:bg-game-error/90 text-white font-medium py-3 px-4 rounded-lg"
+                                onClick={disconnectWallet}
+                            >
+                                Disconnect
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

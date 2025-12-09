@@ -1,10 +1,21 @@
 // Location: src/lib/walletService.ts
-// MiniPay Wallet Service with USDT Payments on CELO Mainnet
+// MiniPay + MetaMask Wallet Service with USDT Payments on CELO Mainnet
 
-import { getAccount, sendTransaction, waitForTransactionReceipt, getChainId, reconnect, watchAccount, readContract, writeContract } from '@wagmi/core';
+import { 
+    getAccount, 
+    sendTransaction, 
+    waitForTransactionReceipt, 
+    getChainId, 
+    reconnect, 
+    watchAccount, 
+    readContract, 
+    writeContract, 
+    connect, 
+    getConnections, 
+    disconnect 
+} from '@wagmi/core';
 import { config } from '@/providers/WagmiProvider';
-import { formatUnits, parseUnits, createPublicClient, http } from 'viem';
-import { celo } from 'wagmi/chains';
+import { formatUnits, parseUnits } from 'viem';
 import { getReferralTag, submitReferral } from '@divvi/referral-sdk';
 import { USDT_ABI, USDT_CONTRACT_ADDRESS, USDT_DECIMALS } from '@/lib/usdtAbi';
 
@@ -14,13 +25,7 @@ const DIVVI_CONSUMER_ID = import.meta.env.VITE_DIVVI_CONSUMER_ID || '0xB6Bb848A8
 // CELO Mainnet Chain ID
 const CELO_MAINNET_CHAIN_ID = 42220;
 
-// Direct CELO public client
-const celoPublicClient = createPublicClient({
-  chain: celo,
-  transport: http('https://forno.celo.org'),
-});
-
-console.log('✅ MiniPay Wallet Service initialized');
+console.log('✅ Wallet Service initialized for USDT on CELO');
 
 export interface WalletState {
     account: string;
@@ -63,15 +68,37 @@ export class WalletService {
     }
 
     /**
+     * Detect wallet type
+     */
+    private detectWallet(): 'minipay' | 'metamask' | 'unknown' {
+        if (typeof window.ethereum === 'undefined') {
+            return 'unknown';
+        }
+        
+        // Check for MiniPay
+        if ((window.ethereum as any).isMiniPay) {
+            return 'minipay';
+        }
+        
+        // Check for MetaMask
+        if ((window.ethereum as any).isMetaMask) {
+            return 'metamask';
+        }
+        
+        // Has ethereum but unknown type
+        return 'unknown';
+    }
+
+    /**
      * Fetch USDT balance (not native CELO)
      */
     async fetchBalance(address: string) {
         if (!address) {
-            console.log('⚠️ [fetchBalance] No address provided');
+            console.log('⚠️ No address provided');
             return;
         }
         
-        console.log('💰 [fetchBalance] Fetching USDT balance for:', address);
+        console.log('💰 Fetching USDT balance for:', address);
         this.updateState({ isLoadingBalance: true });
         
         try {
@@ -87,7 +114,7 @@ export class WalletService {
             // Format with 6 decimals (USDT has 6, not 18)
             const formattedBalance = formatUnits(balance as bigint, USDT_DECIMALS);
             
-            console.log('✅ [fetchBalance] USDT balance:', formattedBalance, 'USDT');
+            console.log('✅ USDT balance:', formattedBalance, 'USDT');
             
             this.updateState({ 
                 balance: parseFloat(formattedBalance).toFixed(2),
@@ -96,12 +123,11 @@ export class WalletService {
             
             return formattedBalance;
         } catch (error) {
-            console.error('❌ [fetchBalance] Error:', error);
+            console.error('❌ Balance fetch error:', error);
             this.updateState({ 
                 balance: '0.00', 
                 isLoadingBalance: false 
             });
-            this.showToast("Error", "Failed to fetch USDT balance");
         }
     }
 
@@ -110,10 +136,15 @@ export class WalletService {
             const currentChainId = await getChainId(config);
             const networkName = currentChainId === CELO_MAINNET_CHAIN_ID ? 'Celo Mainnet' : `Chain ${currentChainId}`;
             
-            console.log('🌐 [checkNetwork]:', networkName);
+            console.log('🌐 Network:', networkName, '(ID:', currentChainId, ')');
             this.updateState({ currentNetwork: networkName });
+            
+            // If not on CELO, show error
+            if (currentChainId !== CELO_MAINNET_CHAIN_ID) {
+                this.showToast("Wrong Network", "Please switch to CELO Mainnet in your wallet");
+            }
         } catch (error) {
-            console.error('❌ [checkNetwork] Error:', error);
+            console.error('❌ Network check error:', error);
             this.updateState({ currentNetwork: 'Unknown' });
         }
     }
@@ -123,39 +154,82 @@ export class WalletService {
     }
 
     async connectWallet() {
-        console.log('🔌 [connectWallet] MiniPay auto-connect...');
+        console.log('🔌 Connecting wallet...');
         this.updateState({ isConnecting: true });
         
         try {
-            // MiniPay auto-connects when app opens
-            await reconnect(config);
-            await new Promise(resolve => setTimeout(resolve, 500));
+            const walletType = this.detectWallet();
+            console.log('🔍 Detected wallet:', walletType);
             
-            const account = getAccount(config);
-            
-            if (account.address && account.isConnected) {
-                console.log('✅ [connectWallet] Connected:', account.address);
-                this.updateState({ account: account.address });
-                this.callbacks.onWalletChange?.(account.address);
-                
-                await this.checkNetwork();
-                await this.fetchBalance(account.address);
-                
-                localStorage.removeItem('wallet_disconnect_requested');
-                this.showToast("Success", "MiniPay wallet connected!");
-            } else {
-                throw new Error('Please open this app in MiniPay');
+            if (walletType === 'unknown') {
+                throw new Error('No wallet detected. Please use MiniPay or MetaMask on CELO Mainnet.');
             }
+
+            // Check if already connected
+            const existingAccount = getAccount(config);
+            if (existingAccount.isConnected && existingAccount.address) {
+                console.log('✅ Already connected:', existingAccount.address);
+                this.updateState({ account: existingAccount.address });
+                this.callbacks.onWalletChange?.(existingAccount.address);
+                await this.checkNetwork();
+                await this.fetchBalance(existingAccount.address);
+                this.updateState({ isConnecting: false });
+                return;
+            }
+
+            // Get available connectors
+            const connectors = config.connectors;
+            console.log('🔗 Available connectors:', connectors.length);
+
+            if (connectors.length === 0) {
+                throw new Error('No wallet connector available');
+            }
+
+            // Try to connect with first available connector
+            const result = await connect(config, {
+                connector: connectors[0],
+                chainId: CELO_MAINNET_CHAIN_ID,
+            });
+
+            console.log('✅ Connected:', result.accounts[0]);
+            
+            this.updateState({ account: result.accounts[0] });
+            this.callbacks.onWalletChange?.(result.accounts[0]);
+            
+            await this.checkNetwork();
+            await this.fetchBalance(result.accounts[0]);
+            
+            localStorage.removeItem('wallet_disconnect_requested');
+            this.showToast("Success", `${walletType === 'minipay' ? 'MiniPay' : 'MetaMask'} connected!`);
+            
         } catch (error: any) {
-            console.error('❌ [connectWallet] Error:', error);
-            this.showToast("Error", error.message || "Failed to connect");
+            console.error('❌ Connection error:', error);
+            
+            // Provide helpful error messages
+            if (error.message?.includes('User rejected')) {
+                this.showToast("Connection Rejected", "Please approve the connection in your wallet");
+            } else if (error.message?.includes('No wallet')) {
+                this.showToast("No Wallet Found", "Please use MiniPay or install MetaMask");
+            } else {
+                this.showToast("Connection Failed", error.message || "Failed to connect wallet");
+            }
         } finally {
             this.updateState({ isConnecting: false });
         }
     }
 
     async disconnectWallet() {
-        console.log('🔌 [disconnectWallet]');
+        console.log('🔌 Disconnecting...');
+        
+        try {
+            const connections = getConnections(config);
+            for (const connection of connections) {
+                await disconnect(config, { connector: connection.connector });
+            }
+        } catch (error) {
+            console.error('Disconnect error:', error);
+        }
+        
         localStorage.setItem('wallet_disconnect_requested', 'true');
         
         this.updateState({
@@ -165,7 +239,7 @@ export class WalletService {
         });
         
         this.callbacks.onWalletChange?.('');
-        this.showToast("Success", "Disconnected!");
+        this.showToast("Success", "Wallet disconnected");
     }
 
     formatAddress(address: string): string {
@@ -177,9 +251,9 @@ export class WalletService {
      * Send USDT payment (ERC20 transfer) with Divvi tracking
      */
     public async sendPayment(toAddress: string, amountInUsdt: string): Promise<boolean> {
-        console.log('💸 [sendPayment] Starting USDT payment...');
-        console.log('💸 [sendPayment] To:', toAddress);
-        console.log('💸 [sendPayment] Amount:', amountInUsdt, 'USDT');
+        console.log('💸 Starting USDT payment...');
+        console.log('💸 To:', toAddress);
+        console.log('💸 Amount:', amountInUsdt, 'USDT');
         
         const account = getAccount(config);
         
@@ -195,13 +269,15 @@ export class WalletService {
 
             // Verify CELO mainnet
             const currentChainId = await getChainId(config);
+            console.log('🌐 Current chain:', currentChainId);
+            
             if (currentChainId !== CELO_MAINNET_CHAIN_ID) {
-                throw new Error('Must be on CELO Mainnet');
+                throw new Error('Please switch to CELO Mainnet in your wallet (Chain ID: 42220)');
             }
 
             // Convert amount to USDT decimals (6, not 18)
             const amountInUsdtWei = parseUnits(amountInUsdt, USDT_DECIMALS);
-            console.log('💰 [sendPayment] Amount in USDT wei:', amountInUsdtWei.toString());
+            console.log('💰 Amount in USDT wei:', amountInUsdtWei.toString());
 
             // Check USDT balance
             const balance = await readContract(config, {
@@ -212,10 +288,15 @@ export class WalletService {
                 chainId: CELO_MAINNET_CHAIN_ID,
             });
 
-            console.log('💰 [sendPayment] USDT Balance:', formatUnits(balance as bigint, USDT_DECIMALS), 'USDT');
+            const balanceFormatted = formatUnits(balance as bigint, USDT_DECIMALS);
+            console.log('💰 Your USDT balance:', balanceFormatted, 'USDT');
+            console.log('💸 Amount needed:', amountInUsdt, 'USDT');
 
             if ((balance as bigint) < amountInUsdtWei) {
-                throw new Error(`Insufficient USDT balance. Need ${amountInUsdt} USDT, have ${formatUnits(balance as bigint, USDT_DECIMALS)} USDT`);
+                throw new Error(
+                    `Insufficient USDT balance. You need ${amountInUsdt} USDT but only have ${balanceFormatted} USDT. ` +
+                    `Please add USDT to your wallet on CELO Mainnet.`
+                );
             }
 
             // Generate Divvi referral tag
@@ -228,10 +309,10 @@ export class WalletService {
                 referralTag = `0x${referralTag}`;
             }
             
-            console.log('🏷️ [sendPayment] Divvi tag:', referralTag);
+            console.log('🏷️ Divvi tag generated');
 
             // Execute USDT transfer
-            console.log('📤 [sendPayment] Sending USDT transfer...');
+            console.log('📤 Sending USDT transfer transaction...');
             const txHash = await writeContract(config, {
                 address: USDT_CONTRACT_ADDRESS,
                 abi: USDT_ABI,
@@ -240,8 +321,8 @@ export class WalletService {
                 chainId: CELO_MAINNET_CHAIN_ID,
             });
 
-            this.showToast('Transaction Sent', 'Confirming USDT transfer...');
-            console.log('📤 [sendPayment] TX hash:', txHash);
+            this.showToast('Transaction Sent', 'Waiting for confirmation...');
+            console.log('📤 TX hash:', txHash);
 
             // Wait for confirmation
             const receipt = await waitForTransactionReceipt(config, {
@@ -250,7 +331,7 @@ export class WalletService {
             });
 
             if (receipt.status === 'success') {
-                console.log('✅ [sendPayment] USDT transfer confirmed!');
+                console.log('✅ USDT transfer confirmed!');
 
                 // Submit to Divvi
                 try {
@@ -258,24 +339,28 @@ export class WalletService {
                         txHash: txHash,
                         chainId: CELO_MAINNET_CHAIN_ID,
                     });
-                    console.log('✅ [sendPayment] Divvi submitted');
+                    console.log('✅ Divvi referral submitted');
                 } catch (divviError) {
-                    console.warn('⚠️ [sendPayment] Divvi failed:', divviError);
+                    console.warn('⚠️ Divvi submission failed:', divviError);
                 }
 
                 // Refresh USDT balance
                 await this.fetchBalance(account.address);
                 
-                this.showToast('Success', `${amountInUsdt} USDT sent successfully!`);
+                this.showToast('Payment Success', `${amountInUsdt} USDT sent successfully!`);
                 return true;
             } else {
                 throw new Error('Transaction failed');
             }
         } catch (error: any) {
-            console.error('💥 [sendPayment] Error:', error);
+            console.error('💥 Payment error:', error);
             
             if (error.message?.includes('rejected') || error.message?.includes('denied')) {
                 throw new Error('Transaction rejected by user');
+            }
+            
+            if (error.message?.includes('Insufficient')) {
+                throw error;
             }
             
             throw new Error(error.message || 'USDT payment failed');
@@ -284,52 +369,69 @@ export class WalletService {
 
     private async initialize() {
         try {
-            console.log('🚀 [initialize] MiniPay wallet service...');
+            console.log('🚀 Initializing wallet service...');
             
             const wasDisconnected = localStorage.getItem('wallet_disconnect_requested');
             if (wasDisconnected === 'true') {
-                console.log('⚠️ [initialize] Previously disconnected');
+                console.log('⚠️ User previously disconnected');
                 return;
             }
 
-            // MiniPay auto-connects
+            const walletType = this.detectWallet();
+            console.log('🔍 Wallet detected:', walletType);
+
+            if (walletType === 'unknown') {
+                console.log('⚠️ No wallet detected on page load');
+                return;
+            }
+
+            // Try auto-reconnect
+            console.log('🔄 Attempting auto-reconnect...');
             await reconnect(config);
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 800));
             
             const account = getAccount(config);
             
             if (account.address && account.isConnected) {
-                console.log('🔗 [initialize] Auto-connected:', account.address);
+                console.log('🔗 Auto-connected to:', account.address);
+                console.log('🔗 Wallet type:', walletType);
                 
                 this.updateState({ account: account.address });
                 this.callbacks.onWalletChange?.(account.address);
                 
-                // Watch for changes
+                // Watch for account changes
                 this.unwatchAccount = watchAccount(config, {
-                    onChange: (account) => {
-                        if (account.address) {
-                            this.updateState({ account: account.address });
-                            this.callbacks.onWalletChange?.(account.address);
-                            this.fetchBalance(account.address);
+                    onChange: (newAccount) => {
+                        console.log('👀 Account changed:', newAccount.address);
+                        if (newAccount.address && newAccount.isConnected) {
+                            this.updateState({ account: newAccount.address });
+                            this.callbacks.onWalletChange?.(newAccount.address);
+                            this.fetchBalance(newAccount.address);
+                        } else {
+                            this.updateState({ account: '', balance: '' });
+                            this.callbacks.onWalletChange?.('');
                         }
                     }
                 });
                 
                 await this.checkNetwork();
                 
+                // Fetch balance after a short delay
                 setTimeout(() => {
                     if (account.address) {
                         this.fetchBalance(account.address);
                     }
                 }, 1000);
+            } else {
+                console.log('⚠️ Wallet detected but not connected');
             }
         } catch (error) {
-            console.error('❌ [initialize] Error:', error);
+            console.error('❌ Initialization error:', error);
         }
     }
 
     destroy() {
-        console.log('🧹 [destroy] Cleanup');
+        console.log('🧹 Cleanup');
         this.unwatchAccount?.();
     }
 }
