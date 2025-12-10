@@ -518,7 +518,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   return (
     <div className={isMobile ? "mobile-game-container bg-background" : "game-container bg-background"}>
-      <div className="p-4 h-full flex flex-col">
+      <div className={`${isMobile ? 'p-2' : 'p-4'} h-full flex flex-col`}>
         <GameHeader
           level={gameState.level}
           score={gameState.score}
@@ -549,7 +549,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           />
         </div>
 
-        <div className="text-center mt-4 min-h-[60px] flex items-center justify-center">
+        <div className={`text-center ${isMobile ? 'mt-2 min-h-[40px]' : 'mt-4 min-h-[60px]'} flex items-center justify-center`}>
           {gameState.isMemorizing && (
             <div className="flex items-center justify-center gap-2 text-green-600">
               <Timer className="w-5 h-5" />
@@ -583,7 +583,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
         {/* Memorization Phase Buttons */}
         {gameState.isMemorizing && !gameState.isPaused && (
-          <div className="flex items-center justify-between mt-4 px-4">
+          <div className={`flex items-center justify-between ${isMobile ? 'mt-2 px-2' : 'mt-4 px-4'}`}>
             <button
               onClick={handleProceedToRecall}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
@@ -609,7 +609,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
         {/* Submit Button - Answer Phase */}
         {gameState.isRecalling && !gameState.isPaused && (
-          <div className="text-center mt-4">
+          <div className={`text-center ${isMobile ? 'mt-2' : 'mt-4'}`}>
             <button
               onClick={() => {
                 stopAllTimers();
