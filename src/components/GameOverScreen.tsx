@@ -53,7 +53,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
               className="w-full bg-game-primary hover:bg-game-primary/90 text-white font-semibold py-3"
             >
               <RotateCcw className="w-4 h-4 mr-2" />
-              Pay 0.1 CELO to Continue
+              Pay 0.1 USDT to Continue
             </Button>
 
             <Button
