@@ -57,6 +57,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [levelFailed, setLevelFailed] = useState(false);
   const [showRetryButton, setShowRetryButton] = useState(false);
   const [hasResetLevel, setHasResetLevel] = useState(false); // Track if level was reset
+  const [showRetryPayment, setShowRetryPayment] = useState(false); // Track retry payment modal
 
   const [savedTimerState, setSavedTimerState] = useState<{time: number, phase: 'memorizing' | 'recalling' | 'idle'}>({time: 0, phase: 'idle'});
 
@@ -459,6 +460,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   };
 
   const handleRetry = () => {
+    // Show payment modal instead of directly restarting
+    setShowRetryPayment(true);
+  };
+
+  const handleRetryPaymentSuccess = () => {
+    // Close payment modal
+    setShowRetryPayment(false);
+    
+    // Reset game state and restart from the level where player died
     setGameState(prev => ({
       ...prev,
       lives: 3,
@@ -507,12 +517,60 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   if (gameState.gameOver) {
     return (
-      <GameOverScreen
-        finalScore={gameState.score}
-        highestLevel={gameState.level}
-        onRetry={handleRetry}
-        onBackToMenu={() => onGameEnd(gameState.score, gameState.level)}
-      />
+      <>
+        <GameOverScreen
+          finalScore={gameState.score}
+          highestLevel={gameState.level}
+          onRetry={handleRetry}
+          onBackToMenu={() => onGameEnd(gameState.score, gameState.level)}
+        />
+        
+        {/* Retry Payment Modal - triggers the actual payment flow */}
+        {showRetryPayment && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-card rounded-xl shadow-2xl max-w-md w-full p-6">
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-foreground mb-2">Continue Playing?</h2>
+                <p className="text-muted-foreground">Pay 0.1 USDT to continue from Level {gameState.levelWhenDied}</p>
+              </div>
+              
+              <div className="bg-muted rounded-lg p-4 mb-6">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-muted-foreground">Amount:</span>
+                  <span className="font-bold text-lg">0.1 USDT</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Benefits:</span>
+                  <span className="text-sm font-medium">3 Lives Restored</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setShowRetryPayment(false);
+                    onPaymentRequest();
+                    // After successful payment in parent component, it will call handleRetryPaymentSuccess
+                    setTimeout(() => {
+                      handleRetryPaymentSuccess();
+                    }, 2000);
+                  }}
+                  className="w-full bg-game-primary hover:bg-game-primary/90 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                >
+                  Pay 0.1 USDT & Continue
+                </button>
+                
+                <button
+                  onClick={() => setShowRetryPayment(false)}
+                  className="w-full bg-muted hover:bg-muted/80 text-foreground font-semibold py-3 px-4 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
