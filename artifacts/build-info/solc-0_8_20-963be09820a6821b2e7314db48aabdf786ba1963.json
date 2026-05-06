@@ -1,0 +1,46 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_20-963be09820a6821b2e7314db48aabdf786ba1963",
+  "solcVersion": "0.8.20",
+  "solcLongVersion": "0.8.20+commit.a1b79de6",
+  "compilerType": "solc",
+  "userSourceNameMap": {
+    "contracts/MemoryMasterEntry.sol": "project/contracts/MemoryMasterEntry.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "shanghai",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode.linkReferences",
+            "evm.bytecode.object",
+            "evm.bytecode.opcodes",
+            "evm.bytecode.sourceMap",
+            "evm.deployedBytecode.immutableReferences",
+            "evm.deployedBytecode.linkReferences",
+            "evm.deployedBytecode.object",
+            "evm.deployedBytecode.opcodes",
+            "evm.deployedBytecode.sourceMap",
+            "evm.methodIdentifiers"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/MemoryMasterEntry.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\n/**\n * @title MemoryMasterEntry\n * @notice Handles 0.1 USDT entry fee payments for Memory Master game on Celo Mainnet\n * @dev Accepts ERC20 USDT transfers and tracks which wallets have paid to play\n */\n\ninterface IERC20 {\n    function transferFrom(address from, address to, uint256 amount) external returns (bool);\n    function transfer(address to, uint256 amount) external returns (bool);\n    function balanceOf(address account) external view returns (uint256);\n    function allowance(address owner, address spender) external view returns (uint256);\n}\n\ncontract MemoryMasterEntry {\n\n    // ─── State ───────────────────────────────────────────────────────────────\n\n    address public owner;\n    address public usdtToken;       // USDT contract on Celo Mainnet\n    uint256 public entryFee;        // In USDT units (6 decimals → 100000 = 0.1 USDT)\n\n    // Tracks whether a player has a valid paid session\n    mapping(address => bool) public hasPaidEntry;\n\n    // Total fees collected\n    uint256 public totalCollected;\n\n    // ─── Events ──────────────────────────────────────────────────────────────\n\n    event EntryPaid(address indexed player, uint256 amount, uint256 timestamp);\n    event EntryConsumed(address indexed player, uint256 timestamp);\n    event FundsWithdrawn(address indexed owner, uint256 amount, uint256 timestamp);\n    event EntryFeeUpdated(uint256 oldFee, uint256 newFee);\n\n    // ─── Errors ──────────────────────────────────────────────────────────────\n\n    error NotOwner();\n    error AlreadyPaid();\n    error InsufficientAllowance(uint256 required, uint256 actual);\n    error TransferFailed();\n    error NoFundsToWithdraw();\n    error ZeroAddress();\n\n    // ─── Modifiers ───────────────────────────────────────────────────────────\n\n    modifier onlyOwner() {\n        if (msg.sender != owner) revert NotOwner();\n        _;\n    }\n\n    // ─── Constructor ─────────────────────────────────────────────────────────\n\n    /**\n     * @param _usdtToken  Address of USDT token on Celo Mainnet\n     *                    (0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e)\n     * @param _entryFee   Entry fee in USDT smallest units\n     *                    (100000 = 0.1 USDT, since USDT has 6 decimals)\n     */\n    constructor(address _usdtToken, uint256 _entryFee) {\n        if (_usdtToken == address(0)) revert ZeroAddress();\n        owner = msg.sender;\n        usdtToken = _usdtToken;\n        entryFee = _entryFee;\n    }\n\n    // ─── Core Functions ──────────────────────────────────────────────────────\n\n    /**\n     * @notice Player calls this to pay the entry fee and unlock a game session.\n     * @dev    Player must first approve this contract to spend `entryFee` USDT.\n     *         Call USDT.approve(contractAddress, entryFee) from the frontend first.\n     */\n    function payEntry() external {\n        if (hasPaidEntry[msg.sender]) revert AlreadyPaid();\n\n        IERC20 usdt = IERC20(usdtToken);\n\n        // Check allowance\n        uint256 allowed = usdt.allowance(msg.sender, address(this));\n        if (allowed < entryFee) revert InsufficientAllowance(entryFee, allowed);\n\n        // Pull USDT from player into this contract\n        bool success = usdt.transferFrom(msg.sender, address(this), entryFee);\n        if (!success) revert TransferFailed();\n\n        hasPaidEntry[msg.sender] = true;\n        totalCollected += entryFee;\n\n        emit EntryPaid(msg.sender, entryFee, block.timestamp);\n    }\n\n    /**\n     * @notice Marks a player's session as consumed (called after game ends).\n     * @dev    Can only be called by the owner (your backend/server wallet) to\n     *         prevent players from reusing a single payment indefinitely.\n     *         If you want players to call this themselves, remove onlyOwner.\n     */\n    function consumeEntry(address player) external onlyOwner {\n        hasPaidEntry[player] = false;\n        emit EntryConsumed(player, block.timestamp);\n    }\n\n    /**\n     * @notice Check if a player has a valid paid session.\n     */\n    function canPlay(address player) external view returns (bool) {\n        return hasPaidEntry[player];\n    }\n\n    // ─── Owner Functions ─────────────────────────────────────────────────────\n\n    /**\n     * @notice Withdraw all collected USDT to the owner wallet.\n     */\n    function withdraw() external onlyOwner {\n        IERC20 usdt = IERC20(usdtToken);\n        uint256 balance = usdt.balanceOf(address(this));\n        if (balance == 0) revert NoFundsToWithdraw();\n\n        bool success = usdt.transfer(owner, balance);\n        if (!success) revert TransferFailed();\n\n        emit FundsWithdrawn(owner, balance, block.timestamp);\n    }\n\n    /**\n     * @notice Update the entry fee.\n     */\n    function setEntryFee(uint256 newFee) external onlyOwner {\n        emit EntryFeeUpdated(entryFee, newFee);\n        entryFee = newFee;\n    }\n\n    /**\n     * @notice Transfer contract ownership.\n     */\n    function transferOwnership(address newOwner) external onlyOwner {\n        if (newOwner == address(0)) revert ZeroAddress();\n        owner = newOwner;\n    }\n}\n"
+      }
+    }
+  }
+}

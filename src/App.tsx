@@ -17,10 +17,6 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-// Game wallet address to receive USDT payments
-const GAME_WALLET_ADDRESS = import.meta.env.VITE_GAME_WALLET_ADDRESS || '0xde25bf927c839355c66ee3551dae8a143bf85f9a';
-const GAME_PRICE = import.meta.env.VITE_GAME_PRICE || '0.1'; // 0.1 USDT
-
 const Home = () => {
     const { toast } = useToast();
     const walletServiceRef = useRef<WalletService | null>(null);
@@ -219,35 +215,23 @@ const Home = () => {
     };
 
     const handlePayment = async () => {
-        console.log('=== USDT PAYMENT START ===');
+        console.log('=== SMART CONTRACT PAYMENT START ===');
         console.log('Wallet state:', walletState);
-        console.log('Game wallet:', GAME_WALLET_ADDRESS);
-        console.log('Amount:', GAME_PRICE, 'USDT');
         
         setIsProcessingPayment(true);
         
         try {
-            if (!GAME_WALLET_ADDRESS || GAME_WALLET_ADDRESS === '0xYourWalletAddressHere') {
-                throw new Error('Game wallet not configured');
-            }
-            
-            if (walletState.account.toLowerCase() === GAME_WALLET_ADDRESS.toLowerCase()) {
-                throw new Error('Cannot send to your own wallet');
-            }
-
             if (!walletState.account) {
                 throw new Error('Wallet disconnected');
             }
 
-            const success = await walletServiceRef.current?.sendPayment(
-                GAME_WALLET_ADDRESS,
-                GAME_PRICE
-            );
+            // Updated: sendPayment() now routes through the smart contract
+            const success = await walletServiceRef.current?.sendPayment();
 
             if (success) {
                 toast({
                     title: "Payment Successful!",
-                    description: `${GAME_PRICE} USDT sent successfully. Starting game...`
+                    description: "0.1 USDT entry fee paid. Starting game..."
                 });
                 
                 setTimeout(() => {
