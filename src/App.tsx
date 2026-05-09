@@ -17,6 +17,13 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
+// Saved game state passed between App and GameScreen for resume feature
+export interface SavedGameState {
+  level: number;
+  score: number;
+  lives: number;
+}
+
 const Home = () => {
     const { toast } = useToast();
     const walletServiceRef = useRef<WalletService | null>(null);
@@ -36,8 +43,10 @@ const Home = () => {
     const [leaderboardEntries, setLeaderboardEntries] = useState<any[]>([]);
     const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
     const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-    const [isPreparingPayment, setIsPreparingPayment] = useState(false);
     const [walletType, setWalletType] = useState<'none' | 'minipay' | 'metamask'>('none');
+
+    // Holds game progress when player hits Home mid-game on 2nd or last life
+    const [savedGameState, setSavedGameState] = useState<SavedGameState | null>(null);
 
     // Detect wallet type on mount
     useEffect(() => {
@@ -46,7 +55,6 @@ const Home = () => {
                 setWalletType('none');
                 return;
             }
-            
             if ((window.ethereum as any).isMiniPay) {
                 console.log('✅ MiniPay detected');
                 setWalletType('minipay');
@@ -55,18 +63,15 @@ const Home = () => {
                 setWalletType('metamask');
             } else {
                 console.log('✅ Generic wallet detected');
-                setWalletType('metamask'); // Treat as MetaMask-compatible
+                setWalletType('metamask');
             }
         };
-
         detectWallet();
     }, []);
 
     useEffect(() => {
-        // Load user data from localStorage
         const savedUserName = localStorage.getItem('userName') || 'Player';
         const savedUserHandle = localStorage.getItem('userHandle') || 'player';
-        
         setUserName(savedUserName);
         setUserHandle(savedUserHandle);
 
@@ -78,8 +83,6 @@ const Home = () => {
 
         walletService.onStateUpdate(setWalletState);
         walletServiceRef.current = walletService;
-
-        // Load leaderboard
         fetchLeaderboard();
 
         return () => {
@@ -87,21 +90,18 @@ const Home = () => {
         };
     }, [toast]);
 
-    // Format dates
     const formatDate = (dateString: string): string => {
         const date = new Date(dateString);
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
         const diffDays = Math.floor(diffHours / 24);
-
         if (diffHours < 24) return 'Today';
         if (diffDays === 1) return 'Yesterday';
         if (diffDays < 7) return `${diffDays} days ago`;
         return date.toLocaleDateString();
     };
 
-    // Fetch leaderboard
     const fetchLeaderboard = async () => {
         setIsLoadingLeaderboard(true);
         try {
@@ -160,80 +160,37 @@ const Home = () => {
         return walletServiceRef.current?.formatAddress(address) || '';
     };
 
-    const handleStartGame = async () => {
-        if (!walletState.account) {
-            console.log('⚠️ Wallet not connected, prompting connection...');
-            setIsPreparingPayment(true);
-            
-            try {
-                await walletServiceRef.current?.connectWallet();
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                
-                if (!walletState.account) {
-                    throw new Error('Failed to connect wallet. Please try again.');
-                }
-                
-                console.log('✅ Wallet connected');
-            } catch (error: any) {
-                console.error('Connection failed:', error);
-                toast({
-                    title: "Connection Failed",
-                    description: error.message || "Failed to connect wallet",
-                    variant: "destructive"
-                });
-                setIsPreparingPayment(false);
-                return;
-            }
-        }
-
-        setIsPreparingPayment(true);
-        
-        try {
-            console.log('🔄 Preparing payment...');
-            
-            await walletServiceRef.current?.checkNetwork();
-            await new Promise(resolve => setTimeout(resolve, 800));
-            
-            if (walletState.account) {
-                await walletServiceRef.current?.fetchBalance(walletState.account);
-            }
-            
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            console.log('✅ Ready. USDT Balance:', walletState.balance);
-            setGameState('payment');
-        } catch (error: any) {
-            console.error('Error preparing payment:', error);
-            toast({
-                title: "Error",
-                description: "Failed to prepare payment",
-                variant: "destructive"
-            });
-        } finally {
-            setIsPreparingPayment(false);
-        }
+    // Begin Challenge — goes straight to game, no payment required
+    const handleStartGame = () => {
+        setGameState('game');
     };
 
+    // Called by GameScreen's Home button — saves state if player is on 2nd or last life
+    const handleGoHome = (currentLevel: number, currentScore: number, currentLives: number) => {
+        if (currentLives <= 2) {
+            // Player has lost at least one life — save progress for resume
+            setSavedGameState({ level: currentLevel, score: currentScore, lives: currentLives });
+        } else {
+            // Player still has full lives — no resume needed
+            setSavedGameState(null);
+        }
+        setGameState('splash');
+    };
+
+    // Payment for extra lives after game over
     const handlePayment = async () => {
         console.log('=== SMART CONTRACT PAYMENT START ===');
-        console.log('Wallet state:', walletState);
-        
         setIsProcessingPayment(true);
-        
         try {
             if (!walletState.account) {
                 throw new Error('Wallet disconnected');
             }
-
-            // Updated: sendPayment() now routes through the smart contract
             const success = await walletServiceRef.current?.sendPayment();
-
             if (success) {
                 toast({
                     title: "Payment Successful!",
                     description: "0.1 USDT entry fee paid. Starting game..."
                 });
-                
                 setTimeout(() => {
                     setIsProcessingPayment(false);
                     setGameState('game');
@@ -259,10 +216,12 @@ const Home = () => {
     const handleGameEnd = async (score: number, level: number) => {
         setFinalScore(score);
         setFinalLevel(level);
-        
+        // Clear saved game state on proper game over
+        setSavedGameState(null);
+
         try {
             const fid = localStorage.getItem('fid') || `guest_${Date.now()}`;
-            
+
             const { data: existing, error: fetchError } = await supabase
                 .from('leaderboard')
                 .select('*')
@@ -306,12 +265,12 @@ const Home = () => {
                 if (insertError) throw insertError;
                 console.log('✅ Score submitted');
             }
-            
+
             await fetchLeaderboard();
         } catch (error) {
             console.error('❌ Score submission error:', error);
         }
-        
+
         setGameState('leaderboard');
     };
 
@@ -320,22 +279,10 @@ const Home = () => {
     if (gameState === 'splash') {
         return (
             <div className="relative">
-                <SplashScreen onStartGame={handleStartGame} />
-                {isPreparingPayment && (
-                    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-                        <div className="bg-card p-8 rounded-xl shadow-2xl max-w-sm mx-4">
-                            <div className="flex flex-col items-center gap-4">
-                                <div className="animate-spin rounded-full h-12 w-12 border-4 border-game-primary border-t-transparent"></div>
-                                <div className="text-center">
-                                    <p className="text-lg font-semibold text-foreground mb-1">Preparing Payment</p>
-                                    <p className="text-sm text-muted-foreground">
-                                        {!account ? 'Connecting wallet...' : 'Checking USDT balance...'}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                <SplashScreen
+                    onStartGame={handleStartGame}
+                    savedGameState={savedGameState}
+                />
             </div>
         );
     }
@@ -353,11 +300,13 @@ const Home = () => {
 
     if (gameState === 'game') {
         return (
-            <GameScreen 
-                onGameEnd={handleGameEnd} 
+            <GameScreen
+                onGameEnd={handleGameEnd}
                 userName={userName}
                 userHandle={userHandle}
                 onPaymentRequest={handlePaymentRequest}
+                onGoHome={handleGoHome}
+                savedGameState={savedGameState}
             />
         );
     }
@@ -407,10 +356,10 @@ const Home = () => {
                         </div>
                         <p className="text-muted-foreground">USDT on Celo Mainnet</p>
                     </div>
-                    
+
                     {!account ? (
                         <div className="space-y-3">
-                            <button 
+                            <button
                                 className="w-full bg-primary text-primary-foreground font-medium py-3 px-4 rounded-xl flex items-center justify-center gap-3 disabled:opacity-50"
                                 onClick={connectWallet}
                                 disabled={isConnecting}
@@ -418,7 +367,7 @@ const Home = () => {
                                 <Wallet size={20} />
                                 {isConnecting ? 'Connecting...' : `Connect ${walletType === 'minipay' ? 'MiniPay' : walletType === 'metamask' ? 'MetaMask' : 'Wallet'}`}
                             </button>
-                            
+
                             {walletType === 'none' && (
                                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
                                     <p className="text-sm text-amber-600 dark:text-amber-400">
@@ -430,7 +379,7 @@ const Home = () => {
                                     </ul>
                                 </div>
                             )}
-                            
+
                             {walletType === 'metamask' && (
                                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
                                     <p className="text-sm text-blue-600 dark:text-blue-400">
@@ -445,12 +394,12 @@ const Home = () => {
                                 <CheckCircle size={20} />
                                 {walletType === 'minipay' ? 'MiniPay' : 'MetaMask'} Connected
                             </h3>
-                            
+
                             <div className="mb-4">
                                 <label className="text-sm font-medium block mb-1">Account:</label>
                                 <div className="flex items-center bg-background p-2 rounded gap-2">
                                     <code className="flex-1 text-sm">{formatAddress(account)}</code>
-                                    <CopyToClipboard 
+                                    <CopyToClipboard
                                         text={account}
                                         onCopy={() => toast({ title: "Copied!", description: "Address copied" })}
                                     >
@@ -477,7 +426,7 @@ const Home = () => {
                                     <label className="text-sm font-medium block mb-1">Network:</label>
                                     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
                                         currentNetwork === 'Celo Mainnet'
-                                            ? 'bg-game-success/20 text-game-success' 
+                                            ? 'bg-game-success/20 text-game-success'
                                             : 'bg-game-error/20 text-game-error'
                                     }`}>
                                         {currentNetwork === 'Celo Mainnet' ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
@@ -488,7 +437,7 @@ const Home = () => {
 
                             <hr className="my-4" />
 
-                            <button 
+                            <button
                                 className="w-full bg-game-error hover:bg-game-error/90 text-white font-medium py-3 px-4 rounded-lg"
                                 onClick={disconnectWallet}
                             >

@@ -2,13 +2,18 @@ import React from 'react';
 import { Play, Grid, Target, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
+import type { SavedGameState } from '@/App';
 
 interface SplashScreenProps {
   onStartGame: () => void;
+  savedGameState: SavedGameState | null;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ onStartGame }) => {
+export const SplashScreen: React.FC<SplashScreenProps> = ({ onStartGame, savedGameState }) => {
   const isMobile = useIsMobile();
+
+  const hasResume = savedGameState !== null;
+  const buttonLabel = hasResume ? 'Resume Game' : 'Begin Challenge';
 
   return (
     <div className={isMobile ? "mobile-game-container bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4" : "game-container bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4"}>
@@ -32,18 +37,28 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onStartGame }) => {
         <div className="relative z-10 bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-xs mx-auto">
           <div className="text-center mb-6">
             <div className="flex items-center justify-center mb-6">
-              <img 
-                src="/logo/memory-master-logo.png" 
+              <img
+                src="/logo/memory-master-logo.png"
                 alt="Memory Master"
                 className="w-full max-w-[280px] h-auto object-contain"
                 style={{ imageRendering: 'pixelated' }}
               />
             </div>
-            
+
             <p className="text-sm text-muted-foreground mb-4 px-2">
               Sharpen your memory—memorize, recreate, and conquer the leaderboard!
             </p>
           </div>
+
+          {/* Resume banner — shown only when player has a saved mid-game session */}
+          {hasResume && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+              <p className="text-sm font-semibold text-amber-700 mb-1">Game in Progress</p>
+              <p className="text-xs text-amber-600">
+                Level {savedGameState!.level} · {savedGameState!.score.toLocaleString()} pts · {savedGameState!.lives} {savedGameState!.lives === 1 ? 'life' : 'lives'} left
+              </p>
+            </div>
+          )}
 
           {/* Feature Highlights */}
           <div className="grid grid-cols-1 gap-3 mb-6">
@@ -54,7 +69,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onStartGame }) => {
                 Memorize complex shapes in limited time
               </p>
             </div>
-            
+
             <div className="text-center p-3 bg-muted/50 rounded-lg">
               <Grid className="w-6 h-6 text-game-secondary mx-auto mb-2" />
               <h3 className="font-semibold text-sm mb-1">8×8 Grid</h3>
@@ -62,7 +77,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onStartGame }) => {
                 Precision gameplay on a classic grid
               </p>
             </div>
-            
+
             <div className="text-center p-3 bg-muted/50 rounded-lg">
               <Trophy className="w-6 h-6 text-game-warning mx-auto mb-2" />
               <h3 className="font-semibold text-sm mb-1">Leaderboard</h3>
@@ -80,9 +95,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onStartGame }) => {
               className="bg-gradient-to-r from-game-primary to-game-secondary hover:from-game-primary/90 hover:to-game-secondary/90 text-white px-6 py-4 text-base font-semibold rounded-xl transition-all transform hover:scale-105 w-full"
             >
               <Play className="w-4 h-4 mr-2" />
-              Begin Challenge
+              {buttonLabel}
             </Button>
-            
+
             <p className="text-xs text-muted-foreground mt-3">
               Built by Hawwal on Celo
             </p>
