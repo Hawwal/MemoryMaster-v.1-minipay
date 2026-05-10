@@ -56,6 +56,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
               Pay 0.1 USDT to Continue
             </Button>
 
+            {/* Back to Menu — goes home and starts fresh, NOT back into the game */}
             <Button
               onClick={onBackToMenu}
               variant="outline"

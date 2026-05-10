@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Trophy, Star, Menu, Pause, Play } from 'lucide-react';
+import { Heart, Trophy, Star, Menu, Pause, Play, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface GameHeaderProps {
@@ -10,6 +10,7 @@ interface GameHeaderProps {
   isPaused: boolean;
   onMenuClick: () => void;
   onPauseClick?: () => void;
+  onHomeClick: () => void;
 }
 
 export const GameHeader: React.FC<GameHeaderProps> = ({
@@ -19,52 +20,67 @@ export const GameHeader: React.FC<GameHeaderProps> = ({
   isPlaying,
   isPaused,
   onMenuClick,
-  onPauseClick
+  onPauseClick,
+  onHomeClick,
 }) => {
   return (
-    <div className="bg-card rounded-lg p-4 shadow-sm border mb-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-game-warning" />
-            <span className="text-sm font-medium">Level {level}</span>
+    <div className="bg-card rounded-lg px-3 py-2 shadow-sm border mb-4">
+      <div className="flex items-center justify-between gap-1">
+
+        {/* Home button — compact, inside the bar */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onHomeClick}
+          className="w-7 h-7 shrink-0"
+          title="Home"
+        >
+          <Home className="w-4 h-4" />
+        </Button>
+
+        {/* Level + Score */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-1">
+            <Trophy className="w-4 h-4 text-game-warning shrink-0" />
+            <span className="text-xs font-medium whitespace-nowrap">Lv {level}</span>
           </div>
-          
-          <div className="flex items-center gap-2">
-            <Star className="w-5 h-5 text-game-primary" />
-            <span className="text-sm font-medium">{score} pts</span>
+
+          <div className="flex items-center gap-1">
+            <Star className="w-4 h-4 text-game-primary shrink-0" />
+            <span className="text-xs font-medium whitespace-nowrap">{score} pts</span>
           </div>
         </div>
-        
+
+        {/* Lives + Pause + Menu */}
         {isPlaying && (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1">
               {Array.from({ length: 3 }, (_, i) => (
                 <Heart
                   key={i}
-                  className={`w-5 h-5 ${
+                  className={`w-4 h-4 ${
                     i < lives ? 'text-game-error fill-game-error' : 'text-muted-foreground'
                   }`}
                 />
               ))}
             </div>
-            
+
             <Button
               variant="ghost"
               size="icon"
               onClick={onPauseClick || (() => {})}
-              className="w-8 h-8"
+              className="w-7 h-7"
             >
-              {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+              {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
             </Button>
-            
+
             <Button
               variant="ghost"
               size="icon"
               onClick={onMenuClick}
-              className="w-8 h-8"
+              className="w-7 h-7"
             >
-              <Menu className="w-4 h-4" />
+              <Menu className="w-3.5 h-3.5" />
             </Button>
           </div>
         )}

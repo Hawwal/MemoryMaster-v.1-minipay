@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { SavedGameState } from '@/App';
 
-// Import music files
 const backgroundMusic = '/music/background.mp3';
 const correctSound = '/music/correct.mp3';
 const incorrectSound = '/music/incorrect.mp3';
@@ -32,7 +31,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   onGoHome,
   savedGameState,
 }) => {
-  // Initialise from savedGameState if resuming, otherwise fresh start
   const [gameState, setGameState] = useState({
     level: savedGameState?.level ?? 1,
     score: savedGameState?.score ?? 0,
@@ -73,16 +71,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const answerTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isPausedRef = useRef(false);
 
-  const audioRefs = {
-    background: useRef<HTMLAudioElement>(null),
-    correct: useRef<HTMLAudioElement>(null),
-    incorrect: useRef<HTMLAudioElement>(null),
-  };
+  // Single background audio instance — created once, never recreated
+  const bgAudioRef = useRef<HTMLAudioElement | null>(null);
+  const correctAudioRef = useRef<HTMLAudioElement | null>(null);
+  const incorrectAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     isPausedRef.current = gameState.isPaused;
   }, [gameState.isPaused]);
 
+  // ── Audio setup — runs ONCE on mount, cleans up on unmount ────────────────
   useEffect(() => {
     const savedHighestLevel = localStorage.getItem('highestLevel');
     if (savedHighestLevel) {
@@ -91,26 +89,32 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
     const savedSound = localStorage.getItem('soundEnabled');
     const savedTheme = localStorage.getItem('darkMode');
-
     if (savedSound !== null) setIsSoundOn(savedSound === 'true');
     if (savedTheme !== null) setIsDarkMode(savedTheme === 'true');
 
-    audioRefs.background.current = new Audio(backgroundMusic);
-    audioRefs.correct.current = new Audio(correctSound);
-    audioRefs.incorrect.current = new Audio(incorrectSound);
+    // Create audio elements once
+    bgAudioRef.current = new Audio(backgroundMusic);
+    bgAudioRef.current.loop = true;
+    bgAudioRef.current.volume = 0.3;
 
-    if (audioRefs.background.current) {
-      audioRefs.background.current.loop = true;
-      audioRefs.background.current.volume = 0.3;
-    }
+    correctAudioRef.current = new Audio(correctSound);
+    incorrectAudioRef.current = new Audio(incorrectSound);
 
     return () => {
-      Object.values(audioRefs).forEach(ref => {
-        if (ref.current) {
-          ref.current.pause();
-          ref.current = null;
-        }
-      });
+      // Full cleanup on unmount — stops overlap when component is remounted
+      if (bgAudioRef.current) {
+        bgAudioRef.current.pause();
+        bgAudioRef.current.src = '';
+        bgAudioRef.current = null;
+      }
+      if (correctAudioRef.current) {
+        correctAudioRef.current.pause();
+        correctAudioRef.current = null;
+      }
+      if (incorrectAudioRef.current) {
+        incorrectAudioRef.current.pause();
+        incorrectAudioRef.current = null;
+      }
       stopAllTimers();
     };
   }, []);
@@ -120,13 +124,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     localStorage.setItem('darkMode', isDarkMode.toString());
   }, [isSoundOn, isDarkMode]);
 
+  // ── Background music control ───────────────────────────────────────────────
   useEffect(() => {
-    if (audioRefs.background.current) {
-      if (isSoundOn && gameState.isPlaying && !gameState.isPaused && !gameState.gameOver) {
-        audioRefs.background.current.play().catch(console.error);
-      } else {
-        audioRefs.background.current.pause();
+    if (!bgAudioRef.current) return;
+
+    const shouldPlay = isSoundOn && gameState.isPlaying && !gameState.isPaused && !gameState.gameOver;
+
+    if (shouldPlay) {
+      // Only call play() if actually paused — avoids duplicate play() calls
+      if (bgAudioRef.current.paused) {
+        bgAudioRef.current.play().catch(console.error);
       }
+    } else {
+      bgAudioRef.current.pause();
     }
   }, [isSoundOn, gameState.isPlaying, gameState.isPaused, gameState.gameOver]);
 
@@ -158,10 +168,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   };
 
   const startMemorizationTimer = (duration: number) => {
-    console.log('Starting memorization timer:', duration);
     setCountdownTimer(duration);
     setCurrentPhase('memorizing');
-
     stopAllTimers();
 
     timerRef.current = setInterval(() => {
@@ -169,12 +177,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         if (prev <= 1) {
           clearInterval(timerRef.current!);
           timerRef.current = null;
-
           if (!isPausedRef.current) {
             setCurrentPhase('idle');
-            setTimeout(() => {
-              transitionToRecallPhase();
-            }, 100);
+            setTimeout(() => { transitionToRecallPhase(); }, 100);
           }
           return 0;
         }
@@ -185,24 +190,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const transitionToRecallPhase = () => {
     if (isPausedRef.current) return;
-
-    console.log('Transitioning to recall phase');
-    setGameState(prev => ({
-      ...prev,
-      isMemorizing: false,
-      isRecalling: true
-    }));
-
+    setGameState(prev => ({ ...prev, isMemorizing: false, isRecalling: true }));
     const recTime = Math.floor(getRecallTime(gameState.level) / 1000);
-    console.log('Starting answer phase with timer:', recTime);
     startAnswerTimer(recTime);
   };
 
   const startAnswerTimer = (duration: number) => {
-    console.log('Starting answer timer:', duration);
     setCountdownTimer(duration);
     setCurrentPhase('recalling');
-
     stopAllTimers();
 
     answerTimerRef.current = setInterval(() => {
@@ -211,12 +206,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           clearInterval(answerTimerRef.current!);
           answerTimerRef.current = null;
           setCurrentPhase('idle');
-
           if (!isPausedRef.current) {
-            setTimeout(() => {
-              console.log('Answer timer expired, auto-submitting');
-              evaluateSelection();
-            }, 100);
+            setTimeout(() => { evaluateSelection(); }, 100);
           }
           return 0;
         }
@@ -234,15 +225,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const startLevel = () => {
     if (isPausedRef.current || gameState.gameOver) return;
 
-    console.log('Starting level:', gameState.level);
-
     const shapeSize = getShapeSize(gameState.level);
     const newShape = generatePolyomino(shapeSize);
 
-    console.log('Generated shape:', newShape);
-
     setHasResetLevel(false);
-
     setGameState(prev => ({
       ...prev,
       isMemorizing: true,
@@ -253,45 +239,31 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }));
 
     const memTime = Math.floor(getMemorizationTime(gameState.level) / 1000);
-    console.log('Memorization time:', memTime);
-
     startMemorizationTimer(memTime);
   };
 
   const handleCellClick = (x: number, y: number) => {
     if (!gameState.isRecalling || isPausedRef.current || gameState.gameOver) return;
-
-    console.log('Cell clicked:', x, y);
     const position = x * 8 + y;
-
     setGameState(prev => {
       const newSelections = prev.playerSelections.includes(position)
         ? prev.playerSelections.filter(p => p !== position)
         : [...prev.playerSelections, position];
-
-      console.log('Updated selections:', newSelections);
       return { ...prev, playerSelections: newSelections };
     });
   };
 
   const evaluateSelection = () => {
-    console.log('Evaluating selection');
-    console.log('Current shape:', gameState.currentShape);
-    console.log('Player selections:', gameState.playerSelections);
-
     const accuracy = calculateAccuracy(
       gameState.currentShape?.cells || [],
       gameState.playerSelections
     );
 
-    console.log('Accuracy:', accuracy);
-
     const passed = accuracy === 1.0;
-
     stopAllTimers();
 
     if (isSoundOn) {
-      const soundRef = passed ? audioRefs.correct : audioRefs.incorrect;
+      const soundRef = passed ? correctAudioRef : incorrectAudioRef;
       if (soundRef.current) {
         soundRef.current.currentTime = 0;
         soundRef.current.play().catch(console.error);
@@ -303,19 +275,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       setLastScore(roundScore);
       setLevelPassed(true);
       setLevelFailed(false);
-
-      setGameState(prev => ({
-        ...prev,
-        accuracy,
-        isMemorizing: false,
-        isRecalling: false,
-        showingFeedback: true
-      }));
-
+      setGameState(prev => ({ ...prev, accuracy, isMemorizing: false, isRecalling: false, showingFeedback: true }));
       setShowSuccessPopup(true);
     } else {
       const newLives = gameState.lives - 1;
-
       setGameState(prev => ({
         ...prev,
         accuracy,
@@ -325,7 +288,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         lives: newLives,
         levelWhenDied: newLives <= 0 ? prev.level : prev.levelWhenDied
       }));
-
       setLevelFailed(true);
       setLevelPassed(false);
       setShowFailurePopup(true);
@@ -337,17 +299,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setLevelPassed(false);
     setLevelFailed(false);
     setShowNextLevelButton(false);
-
-    setGameState(prev => ({
-      ...prev,
-      level: prev.level + 1,
-      score: prev.score + lastScore,
-      showingFeedback: false
-    }));
-
-    setTimeout(() => {
-      startLevel();
-    }, 500);
+    setGameState(prev => ({ ...prev, level: prev.level + 1, score: prev.score + lastScore, showingFeedback: false }));
+    setTimeout(() => { startLevel(); }, 500);
   };
 
   const handleFailureTryAgain = () => {
@@ -356,21 +309,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setShowRetryButton(false);
 
     if (gameState.lives <= 0) {
-      setGameState(prev => ({
-        ...prev,
-        gameOver: true,
-        isPlaying: false,
-        showingFeedback: false
-      }));
+      setGameState(prev => ({ ...prev, gameOver: true, isPlaying: false, showingFeedback: false }));
     } else {
-      setGameState(prev => ({
-        ...prev,
-        showingFeedback: false
-      }));
-
-      setTimeout(() => {
-        startLevel();
-      }, 500);
+      setGameState(prev => ({ ...prev, showingFeedback: false }));
+      setTimeout(() => { startLevel(); }, 500);
     }
   };
 
@@ -379,21 +321,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setLevelFailed(false);
 
     if (gameState.lives <= 0) {
-      setGameState(prev => ({
-        ...prev,
-        gameOver: true,
-        isPlaying: false,
-        showingFeedback: false
-      }));
+      setGameState(prev => ({ ...prev, gameOver: true, isPlaying: false, showingFeedback: false }));
     } else {
-      setGameState(prev => ({
-        ...prev,
-        showingFeedback: false
-      }));
-
-      setTimeout(() => {
-        startLevel();
-      }, 500);
+      setGameState(prev => ({ ...prev, showingFeedback: false }));
+      setTimeout(() => { startLevel(); }, 500);
     }
   };
 
@@ -404,18 +335,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const handleResetLevel = () => {
     if (hasResetLevel) return;
-
     setHasResetLevel(true);
     stopAllTimers();
 
     const shapeSize = getShapeSize(gameState.level);
     const newShape = generatePolyomino(shapeSize);
-
-    setGameState(prev => ({
-      ...prev,
-      currentShape: newShape,
-      playerSelections: []
-    }));
+    setGameState(prev => ({ ...prev, currentShape: newShape, playerSelections: [] }));
 
     const memTime = Math.floor(getMemorizationTime(gameState.level) / 1000);
     startMemorizationTimer(memTime);
@@ -423,19 +348,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const pauseGame = () => {
     if (gameState.gameOver) return;
-
-    setSavedTimerState({
-      time: countdownTimer,
-      phase: currentPhase
-    });
-
+    setSavedTimerState({ time: countdownTimer, phase: currentPhase });
     stopAllTimers();
     setGameState(prev => ({ ...prev, isPaused: true }));
   };
 
   const resumeGame = () => {
     if (gameState.gameOver) return;
-
     setGameState(prev => ({ ...prev, isPaused: false }));
 
     setTimeout(() => {
@@ -452,39 +371,39 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           evaluateSelection();
         }
       }
-
       setSavedTimerState({ time: 0, phase: 'idle' });
     }, 50);
   };
 
-  // Home button pressed — pause game and show confirmation dialog
   const handleHomeButtonPress = () => {
     pauseGame();
     setShowHomeConfirm(true);
   };
 
-  // Player confirms going home
   const handleConfirmGoHome = () => {
     setShowHomeConfirm(false);
     stopAllTimers();
     onGoHome(gameState.level, gameState.score, gameState.lives);
   };
 
-  // Player cancels home — resume game
   const handleCancelGoHome = () => {
     setShowHomeConfirm(false);
-    setTimeout(() => {
-      resumeGame();
-    }, 50);
+    setTimeout(() => { resumeGame(); }, 50);
   };
 
   const handleRetry = () => {
     setShowRetryPayment(true);
   };
 
+  // Cancel on the retry payment modal — go home for a fresh game, no resume state
+  const handleRetryPaymentCancel = () => {
+    setShowRetryPayment(false);
+    // Clear saved game state in parent by passing fresh values, then go to splash
+    onGoHome(1, 0, 3);
+  };
+
   const handleRetryPaymentSuccess = () => {
     setShowRetryPayment(false);
-
     setGameState(prev => ({
       ...prev,
       lives: 3,
@@ -495,10 +414,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
       isMemorizing: false,
       isRecalling: false
     }));
-
-    setTimeout(() => {
-      startLevel();
-    }, 1000);
+    setTimeout(() => { startLevel(); }, 1000);
   };
 
   const handleShare = () => {
@@ -506,11 +422,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     const shareUrl = window.location.href;
 
     if (navigator.share) {
-      navigator.share({
-        title: 'Memory Master',
-        text: shareText,
-        url: shareUrl,
-      }).catch(console.error);
+      navigator.share({ title: 'Memory Master', text: shareText, url: shareUrl }).catch(console.error);
     } else {
       navigator.clipboard.writeText(`${shareText} ${shareUrl}`).then(() => {
         alert('Link copied to clipboard!');
@@ -522,9 +434,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (gameState.isPlaying && !gameState.isPaused && !gameState.gameOver &&
         !gameState.isMemorizing && !gameState.isRecalling && !gameState.showingFeedback &&
         currentPhase === 'idle') {
-      const timer = setTimeout(() => {
-        startLevel();
-      }, 1000);
+      const timer = setTimeout(() => { startLevel(); }, 1000);
       return () => clearTimeout(timer);
     }
   }, [gameState.isPlaying, gameState.isPaused, gameState.gameOver, gameState.isMemorizing, gameState.isRecalling, gameState.showingFeedback, currentPhase]);
@@ -538,6 +448,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           finalScore={gameState.score}
           highestLevel={gameState.level}
           onRetry={handleRetry}
+          // Back to Menu shows leaderboard as originally intended
           onBackToMenu={() => onGameEnd(gameState.score, gameState.level)}
         />
 
@@ -566,17 +477,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   onClick={() => {
                     setShowRetryPayment(false);
                     onPaymentRequest();
-                    setTimeout(() => {
-                      handleRetryPaymentSuccess();
-                    }, 2000);
+                    setTimeout(() => { handleRetryPaymentSuccess(); }, 2000);
                   }}
                   className="w-full bg-game-primary hover:bg-game-primary/90 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
                 >
                   Pay 0.1 USDT & Continue
                 </button>
 
+                {/* Cancel — goes to home screen for a fresh game */}
                 <button
-                  onClick={() => setShowRetryPayment(false)}
+                  onClick={handleRetryPaymentCancel}
                   className="w-full bg-muted hover:bg-muted/80 text-foreground font-semibold py-3 px-4 rounded-lg transition-colors"
                 >
                   Cancel
@@ -593,35 +503,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     <div className={isMobile ? "mobile-game-container bg-background" : "game-container bg-background"}>
       <div className={`${isMobile ? 'p-2' : 'p-4'} h-full flex flex-col`}>
 
-        {/* Top bar with Home button + existing GameHeader */}
-        <div className="flex items-center gap-2 mb-1">
-          <button
-            onClick={handleHomeButtonPress}
-            className="flex items-center gap-1 px-3 py-2 rounded-lg bg-muted hover:bg-muted/80 text-foreground text-sm font-medium transition-colors"
-            title="Go to Home"
-          >
-            <Home className="w-4 h-4" />
-            {!isMobile && <span>Home</span>}
-          </button>
-
-          <div className="flex-1">
-            <GameHeader
-              level={gameState.level}
-              score={gameState.score}
-              lives={gameState.lives}
-              isPlaying={gameState.isPlaying}
-              isPaused={gameState.isPaused}
-              onMenuClick={() => { pauseGame(); setMenuOpen(true); }}
-              onPauseClick={() => {
-                if (gameState.isPaused) {
-                  resumeGame();
-                } else {
-                  pauseGame();
-                }
-              }}
-            />
-          </div>
-        </div>
+        {/* GameHeader now contains the Home button internally */}
+        <GameHeader
+          level={gameState.level}
+          score={gameState.score}
+          lives={gameState.lives}
+          isPlaying={gameState.isPlaying}
+          isPaused={gameState.isPaused}
+          onMenuClick={() => { pauseGame(); setMenuOpen(true); }}
+          onPauseClick={() => {
+            if (gameState.isPaused) { resumeGame(); } else { pauseGame(); }
+          }}
+          onHomeClick={handleHomeButtonPress}
+        />
 
         <div className="flex-1 flex items-center justify-center">
           <GameGrid
@@ -657,15 +551,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           )}
 
           {gameState.isPaused && (
-            <div className="text-muted-foreground text-lg font-semibold">
-              Game Paused
-            </div>
+            <div className="text-muted-foreground text-lg font-semibold">Game Paused</div>
           )}
 
           {!gameState.isMemorizing && !gameState.isRecalling && !gameState.showingFeedback && !gameState.isPaused && currentPhase === 'idle' && (
-            <div className="text-muted-foreground text-lg font-semibold">
-              Get Ready...
-            </div>
+            <div className="text-muted-foreground text-lg font-semibold">Get Ready...</div>
           )}
         </div>
 
@@ -699,10 +589,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         {gameState.isRecalling && !gameState.isPaused && (
           <div className={`text-center ${isMobile ? 'mt-2' : 'mt-4'}`}>
             <button
-              onClick={() => {
-                stopAllTimers();
-                evaluateSelection();
-              }}
+              onClick={() => { stopAllTimers(); evaluateSelection(); }}
               disabled={gameState.playerSelections.length === 0}
               className="submit-button"
             >
@@ -720,18 +607,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 Correct!
               </DialogTitle>
             </DialogHeader>
-
             <div className="text-center space-y-4">
-              <div className="text-3xl font-bold text-green-600">
-                +{lastScore} Points
-              </div>
-              <div className="text-muted-foreground">
-                Accuracy: {Math.round(gameState.accuracy * 100)}%
-              </div>
-              <Button
-                onClick={handleSuccessNext}
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
-              >
+              <div className="text-3xl font-bold text-green-600">+{lastScore} Points</div>
+              <div className="text-muted-foreground">Accuracy: {Math.round(gameState.accuracy * 100)}%</div>
+              <Button onClick={handleSuccessNext} className="w-full bg-green-600 hover:bg-green-700 text-white">
                 Next Level
               </Button>
             </div>
@@ -741,19 +620,14 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         {showSuccessPopup === false && levelPassed && (
           <>
             {setTimeout(() => {
-              if (levelPassed && !showSuccessPopup) {
-                setShowNextLevelButton(true);
-              }
+              if (levelPassed && !showSuccessPopup) { setShowNextLevelButton(true); }
             }, 100)}
           </>
         )}
 
         {showNextLevelButton && (
           <div className="text-center mt-4">
-            <button
-              onClick={handleSuccessNext}
-              className="submit-button bg-green-600 hover:bg-green-700"
-            >
+            <button onClick={handleSuccessNext} className="submit-button bg-green-600 hover:bg-green-700">
               Continue to Level {gameState.level + 1}
             </button>
           </div>
@@ -761,10 +635,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
         {showRetryButton && (
           <div className="text-center mt-4">
-            <button
-              onClick={handleRetryLevel}
-              className="submit-button bg-red-600 hover:bg-red-700"
-            >
+            <button onClick={handleRetryLevel} className="submit-button bg-red-600 hover:bg-red-700">
               Retry Level {gameState.level}
             </button>
           </div>
@@ -779,32 +650,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 Wrong Pattern!
               </DialogTitle>
             </DialogHeader>
-
             <div className="text-center space-y-4">
-              <div className="text-lg text-muted-foreground">
-                Accuracy: {Math.round(gameState.accuracy * 100)}%
-              </div>
-              <div className="text-lg font-semibold">
-                Lives remaining: {gameState.lives}
-              </div>
-              <Button
-                onClick={handleFailureTryAgain}
-                className="w-full bg-red-600 hover:bg-red-700 text-white"
-              >
+              <div className="text-lg text-muted-foreground">Accuracy: {Math.round(gameState.accuracy * 100)}%</div>
+              <div className="text-lg font-semibold">Lives remaining: {gameState.lives}</div>
+              <Button onClick={handleFailureTryAgain} className="w-full bg-red-600 hover:bg-red-700 text-white">
                 Try Again
               </Button>
             </div>
-
             <div style={{ display: 'none' }}>
               {!showFailurePopup && levelFailed && setTimeout(() => {
                 if (levelFailed && !showFailurePopup) {
                   if (gameState.lives <= 0) {
-                    setGameState(prev => ({
-                      ...prev,
-                      gameOver: true,
-                      isPlaying: false,
-                      showingFeedback: false
-                    }));
+                    setGameState(prev => ({ ...prev, gameOver: true, isPlaying: false, showingFeedback: false }));
                   } else {
                     setShowRetryButton(true);
                   }
@@ -823,7 +680,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 Go to Home?
               </DialogTitle>
             </DialogHeader>
-
             <div className="text-center space-y-3">
               <p className="text-sm text-muted-foreground">
                 {gameState.lives <= 2
@@ -831,17 +687,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   : 'Your current game will end. You still have all your lives so a fresh game will start next time.'}
               </p>
               <div className="flex gap-3">
-                <Button
-                  onClick={handleCancelGoHome}
-                  variant="outline"
-                  className="flex-1"
-                >
+                <Button onClick={handleCancelGoHome} variant="outline" className="flex-1">
                   Keep Playing
                 </Button>
-                <Button
-                  onClick={handleConfirmGoHome}
-                  className="flex-1 bg-game-primary hover:bg-game-primary/90 text-white"
-                >
+                <Button onClick={handleConfirmGoHome} className="flex-1 bg-game-primary hover:bg-game-primary/90 text-white">
                   Go Home
                 </Button>
               </div>
@@ -853,9 +702,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           isOpen={menuOpen}
           onClose={() => {
             setMenuOpen(false);
-            setTimeout(() => {
-              resumeGame();
-            }, 50);
+            setTimeout(() => { resumeGame(); }, 50);
           }}
           isSoundOn={isSoundOn}
           onSoundToggle={setIsSoundOn}
@@ -868,10 +715,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           highestLevel={gameState.highestLevel}
           currentScore={gameState.score}
         />
-
-        <audio ref={audioRefs.background} />
-        <audio ref={audioRefs.correct} />
-        <audio ref={audioRefs.incorrect} />
       </div>
     </div>
   );
