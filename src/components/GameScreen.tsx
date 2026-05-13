@@ -4,6 +4,7 @@ import { GameHeader } from './GameHeader';
 import { GameMenu } from './GameMenu';
 import { GameOverScreen } from './GameOverScreen';
 import { generatePolyomino, getMemorizationTime, getRecallTime, getShapeSize, calculateAccuracy } from '@/lib/gameLogic';
+import { WalletService } from '@/lib/walletService';
 import { Timer, Target, Trophy, AlertCircle, ArrowRight, RotateCcw, Home } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const answerTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isPausedRef = useRef(false);
 
+  // WalletService instance for on-chain session recording
+  const walletServiceRef = useRef<WalletService | null>(null);
+  // Ensures recordPlay is called at most once per game session (component mount)
+  const hasRecordedSessionRef = useRef(false);
+
   // Single background audio instance — created once, never recreated
   const bgAudioRef = useRef<HTMLAudioElement | null>(null);
   const correctAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -92,6 +98,18 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     if (savedSound !== null) setIsSoundOn(savedSound === 'true');
     if (savedTheme !== null) setIsDarkMode(savedTheme === 'true');
 
+    // Initialise WalletService for on-chain session recording
+    walletServiceRef.current = new WalletService({ onToast: () => {} });
+
+    // Record this game session on-chain exactly once per mount
+    // Fire-and-forget — never blocks or delays gameplay
+    if (!hasRecordedSessionRef.current) {
+      hasRecordedSessionRef.current = true;
+      setTimeout(() => {
+        walletServiceRef.current?.recordPlay();
+      }, 2000); // Small delay so wallet is ready before the call
+    }
+
     // Create audio elements once
     bgAudioRef.current = new Audio(backgroundMusic);
     bgAudioRef.current.loop = true;
@@ -102,6 +120,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
     return () => {
       // Full cleanup on unmount — stops overlap when component is remounted
+      walletServiceRef.current?.destroy();
+      walletServiceRef.current = null;
       if (bgAudioRef.current) {
         bgAudioRef.current.pause();
         bgAudioRef.current.src = '';

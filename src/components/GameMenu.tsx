@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { X, User, Settings, Trophy, Share, Volume2, VolumeX, Sun, Moon, Edit3, Save, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, User, Settings, Trophy, Share, Volume2, VolumeX, Sun, Moon, Edit3, Save, ArrowLeft, Megaphone, MessageSquare } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { ShareModal } from './ShareModal';
-import { Leaderboard } from './Leaderboard';
 
 interface GameMenuProps {
   isOpen: boolean;
@@ -37,11 +36,11 @@ export const GameMenu: React.FC<GameMenuProps> = ({
   highestLevel,
   currentScore
 }) => {
+  const navigate = useNavigate();
   const [editingProfile, setEditingProfile] = useState(false);
   const [userName, setUserName] = useState(initialUserName);
   const [userHandle, setUserHandle] = useState(initialUserHandle);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [currentView, setCurrentView] = useState<'main' | 'settings' | 'profile'>('main');
+  const [currentView, setCurrentView] = useState<'main' | 'settings' | 'profile' | 'leaderboard' | 'share'>('main');
 
   const handleSaveProfile = () => {
     // Save to localStorage
@@ -59,12 +58,13 @@ export const GameMenu: React.FC<GameMenuProps> = ({
   ];
 
   const handleLeaderboardClick = () => {
-    onClose();
     onLeaderboardClick();
+    setCurrentView('leaderboard');
   };
 
   const handleShareClick = () => {
-    setShowShareModal(true);
+    onShareClick();
+    setCurrentView('share');
   };
 
   // Share View with back arrow
@@ -424,7 +424,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({
               <Button
                 variant="outline"
                 className="w-full justify-start text-sm"
-                onClick={() => setCurrentView('leaderboard')}
+                onClick={handleLeaderboardClick}
               >
                 <Trophy className="w-4 h-4 mr-2" />
                 Leaderboard
@@ -433,23 +433,33 @@ export const GameMenu: React.FC<GameMenuProps> = ({
               <Button
                 variant="outline"
                 className="w-full justify-start text-sm"
-                onClick={() => setCurrentView('share')}
+                onClick={handleShareClick}
               >
                 <Share className="w-4 h-4 mr-2" />
                 Share Progress
               </Button>
             </div>
 
-            {/* Ad Space */}
-            <div className="border-t pt-4">
-              <div className="bg-muted/50 border-2 border-dashed border-muted-foreground/30 rounded-lg p-4 text-center">
-                <div className="text-xs text-muted-foreground font-medium">
-                  📢 Place ad here
-                </div>
-                <div className="text-xs text-muted-foreground/60 mt-1">
-                  Promotional content space
-                </div>
-              </div>
+            {/* Advertising */}
+            <div className="border-t pt-4 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">Advertising</p>
+              <Button
+                variant="outline"
+                className="w-full justify-start text-sm"
+                onClick={() => { onClose(); navigate('/ads'); }}
+              >
+                <Megaphone className="w-4 h-4 mr-2 text-indigo-500" />
+                Place an Ad
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start text-sm"
+                onClick={() => { onClose(); navigate('/ads'); }}
+              >
+                <MessageSquare className="w-4 h-4 mr-2 text-indigo-500" />
+                Request Consultation
+                <span className="ml-auto text-xs text-muted-foreground">5 USDT</span>
+              </Button>
             </div>
           </div>
         </DialogContent>

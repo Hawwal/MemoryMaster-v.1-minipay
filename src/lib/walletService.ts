@@ -20,12 +20,18 @@ import { USDT_ABI, USDT_CONTRACT_ADDRESS, USDT_DECIMALS } from '@/lib/usdtAbi';
 
 // ─── Contract Config ────────────────────────────────────────────────────────
 
-// Replace with your deployed contract address after running deploy.js
 const CONTRACT_ADDRESS = (import.meta.env.VITE_CONTRACT_ADDRESS || '') as `0x${string}`;
 
 const CONTRACT_ABI = [
   {
     name: 'payEntry',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: [],
+  },
+  {
+    name: 'recordPlay',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [],
@@ -52,13 +58,90 @@ const CONTRACT_ABI = [
     inputs: [],
     outputs: [{ name: '', type: 'uint256' }],
   },
+  {
+    name: 'totalSessions',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'playerSessionCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: '', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'getPlayerStats',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'player', type: 'address' }],
+    outputs: [
+      { name: 'sessionCount', type: 'uint256' },
+      { name: 'lastPlayed', type: 'uint256' },
+    ],
+  },
 ] as const;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const DIVVI_CONSUMER_ID = import.meta.env.VITE_DIVVI_CONSUMER_ID || '0xB6Bb848A8E00b77698CAb1626C893dc8ddE4927c';
 const CELO_MAINNET_CHAIN_ID = 42220;
-const GAME_ENTRY_FEE = '0.1'; // 0.1 USDT
+const GAME_ENTRY_FEE = '0.1';
+
+// ─── Ad Tier Config ───────────────────────────────────────────────────────────
+
+export interface AdTier {
+  id: string;
+  label: string;
+  usdtAmount: string;
+  dailyMinutes: number;
+  validityDays: number;
+  intervalSeconds: number;
+  canSelectInterval: boolean;
+}
+
+export const AD_TIERS: AdTier[] = [
+  {
+    id: '5usdt',
+    label: '5 USDT — 2 min/day for 7 days',
+    usdtAmount: '5',
+    dailyMinutes: 2,
+    validityDays: 7,
+    intervalSeconds: 3,
+    canSelectInterval: false,
+  },
+  {
+    id: '10usdt',
+    label: '10 USDT — 3 min/day for 15 days',
+    usdtAmount: '10',
+    dailyMinutes: 3,
+    validityDays: 15,
+    intervalSeconds: 3,
+    canSelectInterval: false,
+  },
+  {
+    id: '20usdt',
+    label: '20 USDT — 6 min/day for 15 days',
+    usdtAmount: '20',
+    dailyMinutes: 6,
+    validityDays: 15,
+    intervalSeconds: 3,
+    canSelectInterval: true,
+  },
+  {
+    id: '30usdt',
+    label: '30 USDT — 10 min/day for 15 days (Full Saturation)',
+    usdtAmount: '30',
+    dailyMinutes: 10,
+    validityDays: 15,
+    intervalSeconds: 3,
+    canSelectInterval: true,
+  },
+];
+
+export const CONSULTATION_FEE = '5';
 
 console.log('✅ Wallet Service initialized — Smart Contract mode on CELO');
 
@@ -75,6 +158,20 @@ export interface WalletState {
 export interface WalletCallbacks {
     onWalletChange?: (address: string) => void;
     onToast?: (title: string, description: string) => void;
+}
+
+export interface AdPaymentResult {
+    success: boolean;
+    txHash: string;
+    walletAddress: string;
+    tier: AdTier;
+    intervalSeconds: number;
+}
+
+export interface ConsultationPaymentResult {
+    success: boolean;
+    txHash: string;
+    walletAddress: string;
 }
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -211,9 +308,6 @@ export class WalletService {
         return `${address.slice(0, 6)}...${address.slice(-4)}`;
     }
 
-    /**
-     * Check if the connected player has already paid for a session on-chain.
-     */
     async checkCanPlay(address: string): Promise<boolean> {
         try {
             const result = await readContract(config, {
@@ -230,10 +324,78 @@ export class WalletService {
         }
     }
 
+    // ─── Generic USDT transfer to contract ───────────────────────────────────
+    private async sendUSDTToContract(
+        amountUsdt: string,
+        toastLabel: string
+    ): Promise<string> {
+        const account = getAccount(config);
+        if (!account.address || !account.isConnected) throw new Error('Wallet not connected');
+
+        const currentChainId = await getChainId(config);
+        if (currentChainId !== CELO_MAINNET_CHAIN_ID) {
+            throw new Error('Please switch to CELO Mainnet in your wallet (Chain ID: 42220)');
+        }
+
+        const amountInUsdtWei = parseUnits(amountUsdt, USDT_DECIMALS);
+
+        const balance = await readContract(config, {
+            address: USDT_CONTRACT_ADDRESS,
+            abi: USDT_ABI,
+            functionName: 'balanceOf',
+            args: [account.address as `0x${string}`],
+            chainId: CELO_MAINNET_CHAIN_ID,
+        });
+
+        if ((balance as bigint) < amountInUsdtWei) {
+            const formatted = formatUnits(balance as bigint, USDT_DECIMALS);
+            throw new Error(
+                `Insufficient USDT. You need ${amountUsdt} USDT but have ${parseFloat(formatted).toFixed(2)} USDT.`
+            );
+        }
+
+        // Step 1: Approve
+        this.showToast('Approval Required', `Approve ${amountUsdt} USDT spend in your wallet (1 of 2)`);
+        const approveTxHash = await writeContract(config, {
+            address: USDT_CONTRACT_ADDRESS,
+            abi: USDT_ABI,
+            functionName: 'approve',
+            args: [CONTRACT_ADDRESS, amountInUsdtWei],
+            chainId: CELO_MAINNET_CHAIN_ID,
+        });
+
+        await waitForTransactionReceipt(config, {
+            hash: approveTxHash,
+            chainId: CELO_MAINNET_CHAIN_ID,
+        });
+
+        // Step 2: Transfer to contract
+        this.showToast(toastLabel, `Confirm ${amountUsdt} USDT payment in your wallet (2 of 2)`);
+        const transferTxHash = await writeContract(config, {
+            address: USDT_CONTRACT_ADDRESS,
+            abi: USDT_ABI,
+            functionName: 'transfer',
+            args: [CONTRACT_ADDRESS, amountInUsdtWei],
+            chainId: CELO_MAINNET_CHAIN_ID,
+        });
+
+        this.showToast('Transaction Sent', 'Waiting for confirmation...');
+
+        const receipt = await waitForTransactionReceipt(config, {
+            hash: transferTxHash,
+            chainId: CELO_MAINNET_CHAIN_ID,
+        });
+
+        if (receipt.status !== 'success') {
+            throw new Error('Transaction failed on-chain');
+        }
+
+        await this.fetchBalance(account.address);
+        return transferTxHash;
+    }
+
     /**
      * Pay the game entry fee via the smart contract.
-     * Step 1: Approve the contract to spend 0.1 USDT
-     * Step 2: Call payEntry() on the contract
      */
     public async sendPayment(): Promise<boolean> {
         console.log('💸 Starting smart contract entry payment...');
@@ -248,7 +410,6 @@ export class WalletService {
 
         const amountInUsdtWei = parseUnits(GAME_ENTRY_FEE, USDT_DECIMALS);
 
-        // ── Check USDT balance ───────────────────────────────────────────────
         const balance = await readContract(config, {
             address: USDT_CONTRACT_ADDRESS,
             abi: USDT_ABI,
@@ -264,8 +425,6 @@ export class WalletService {
             );
         }
 
-        // ── Step 1: Approve contract to spend USDT ──────────────────────────
-        console.log('📝 Step 1/2: Approving USDT spend...');
         this.showToast('Approval Required', 'Please approve USDT spend in your wallet (1 of 2)');
 
         const approveTxHash = await writeContract(config, {
@@ -281,13 +440,8 @@ export class WalletService {
             chainId: CELO_MAINNET_CHAIN_ID,
         });
 
-        console.log('✅ Approval confirmed');
-
-        // ── Step 2: Call payEntry() on the contract ──────────────────────────
-        console.log('📤 Step 2/2: Paying entry fee to contract...');
         this.showToast('Payment Required', 'Please confirm entry fee payment (2 of 2)');
 
-        // Generate Divvi referral tag for tracking
         let referralTag = getReferralTag({
             user: account.address,
             consumer: DIVVI_CONSUMER_ID,
@@ -311,21 +465,97 @@ export class WalletService {
         });
 
         if (receipt.status === 'success') {
-            console.log('✅ Entry payment confirmed!');
-
-            // Submit to Divvi
             try {
                 await submitReferral({ txHash: payTxHash, chainId: CELO_MAINNET_CHAIN_ID });
             } catch (divviError) {
                 console.warn('⚠️ Divvi submission failed:', divviError);
             }
-
             await this.fetchBalance(account.address);
             this.showToast('Payment Success', 'Entry fee paid! Starting game...');
             return true;
         } else {
             throw new Error('Transaction failed on-chain');
         }
+    }
+
+    /**
+     * Record a game session on-chain. Free — only costs a tiny amount of CELO gas.
+     * Called when a player starts a game. Creates an auditable on-chain record.
+     * Silently fails if wallet not connected — never blocks gameplay.
+     */
+    public async recordPlay(): Promise<void> {
+        try {
+            const account = getAccount(config);
+            if (!account.address || !account.isConnected) return;
+
+            const currentChainId = await getChainId(config);
+            if (currentChainId !== CELO_MAINNET_CHAIN_ID) return;
+
+            console.log('📝 Recording game session on-chain...');
+
+            const txHash = await writeContract(config, {
+                address: CONTRACT_ADDRESS,
+                abi: CONTRACT_ABI,
+                functionName: 'recordPlay',
+                chainId: CELO_MAINNET_CHAIN_ID,
+            });
+
+            // Don't await receipt — fire and forget so it never delays game start
+            waitForTransactionReceipt(config, {
+                hash: txHash,
+                chainId: CELO_MAINNET_CHAIN_ID,
+            }).then(() => {
+                console.log('✅ Game session recorded on-chain:', txHash);
+            }).catch((e) => {
+                console.warn('⚠️ Session record tx failed (non-blocking):', e.message);
+            });
+
+        } catch (e: any) {
+            // Silently swallow — recording failure must never affect gameplay
+            console.warn('⚠️ recordPlay skipped:', e.message);
+        }
+    }
+
+    /**
+     * Pay for an ad placement.
+     */
+    public async payForAd(tier: AdTier, intervalSeconds: number): Promise<AdPaymentResult> {
+        console.log(`💸 Ad payment: ${tier.usdtAmount} USDT for tier ${tier.id}`);
+
+        const account = getAccount(config);
+        if (!account.address || !account.isConnected) throw new Error('Wallet not connected');
+
+        const txHash = await this.sendUSDTToContract(tier.usdtAmount, 'Ad Payment');
+
+        this.showToast('Ad Payment Confirmed!', 'Your ad has been submitted for review.');
+
+        return {
+            success: true,
+            txHash,
+            walletAddress: account.address,
+            tier,
+            intervalSeconds,
+        };
+    }
+
+    /**
+     * Pay for a consultation (5 USDT).
+     */
+    public async payForConsultation(): Promise<ConsultationPaymentResult> {
+        console.log('💸 Consultation payment: 5 USDT');
+
+        const account = getAccount(config);
+        if (!account.address || !account.isConnected) throw new Error('Wallet not connected');
+
+        const txHash = await this.sendUSDTToContract(CONSULTATION_FEE, 'Consultation Payment');
+
+        this.showToast('Payment Confirmed!', 'You can now submit your consultation request.');
+
+        return {
+            success: true,
+            txHash,
+            walletAddress: account.address,
+        };
     }
 
     private async initialize() {

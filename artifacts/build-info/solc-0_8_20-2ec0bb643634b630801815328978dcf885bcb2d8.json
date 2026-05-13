@@ -1,0 +1,46 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_20-2ec0bb643634b630801815328978dcf885bcb2d8",
+  "solcVersion": "0.8.20",
+  "solcLongVersion": "0.8.20+commit.a1b79de6",
+  "compilerType": "solc",
+  "userSourceNameMap": {
+    "contracts/MemoryMasterEntry.sol": "project/contracts/MemoryMasterEntry.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "shanghai",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode.linkReferences",
+            "evm.bytecode.object",
+            "evm.bytecode.opcodes",
+            "evm.bytecode.sourceMap",
+            "evm.deployedBytecode.immutableReferences",
+            "evm.deployedBytecode.linkReferences",
+            "evm.deployedBytecode.object",
+            "evm.deployedBytecode.opcodes",
+            "evm.deployedBytecode.sourceMap",
+            "evm.methodIdentifiers"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/MemoryMasterEntry.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\n/**\n * @title MemoryMasterEntry\n * @notice Handles payments and on-chain game session recording for Memory Master\n * @dev Deployed on Celo Mainnet (chain 42220)\n */\n\ninterface IERC20 {\n    function transferFrom(address from, address to, uint256 amount) external returns (bool);\n    function transfer(address to, uint256 amount) external returns (bool);\n    function balanceOf(address account) external view returns (uint256);\n    function allowance(address owner, address spender) external view returns (uint256);\n}\n\ncontract MemoryMasterEntry {\n\n    // ─── State ───────────────────────────────────────────────────────────────\n\n    address public owner;\n    address public usdtToken;\n    uint256 public entryFee;\n\n    // Payment tracking\n    mapping(address => bool) public hasPaidEntry;\n    uint256 public totalCollected;\n\n    // ─── Game Session Recording ───────────────────────────────────────────────\n\n    // Total number of game sessions ever recorded\n    uint256 public totalSessions;\n\n    // Per-wallet session count\n    mapping(address => uint256) public playerSessionCount;\n\n    // Per-wallet last played timestamp\n    mapping(address => uint256) public playerLastPlayed;\n\n    // ─── Events ──────────────────────────────────────────────────────────────\n\n    event EntryPaid(address indexed player, uint256 amount, uint256 timestamp);\n    event EntryConsumed(address indexed player, uint256 timestamp);\n    event FundsWithdrawn(address indexed owner, uint256 amount, uint256 timestamp);\n    event EntryFeeUpdated(uint256 oldFee, uint256 newFee);\n\n    // Emitted every time a player starts a game session — free or paid\n    event GameSessionRecorded(\n        address indexed player,\n        uint256 sessionNumber,        // This player's nth session\n        uint256 totalSessionsAllTime, // Global session counter\n        uint256 timestamp\n    );\n\n    // ─── Errors ──────────────────────────────────────────────────────────────\n\n    error NotOwner();\n    error AlreadyPaid();\n    error InsufficientAllowance(uint256 required, uint256 actual);\n    error TransferFailed();\n    error NoFundsToWithdraw();\n    error ZeroAddress();\n    error TooSoonToRecord(); // Prevents spam — min 30s between recordings\n\n    // ─── Modifiers ───────────────────────────────────────────────────────────\n\n    modifier onlyOwner() {\n        if (msg.sender != owner) revert NotOwner();\n        _;\n    }\n\n    // ─── Constructor ─────────────────────────────────────────────────────────\n\n    constructor(address _usdtToken, uint256 _entryFee) {\n        if (_usdtToken == address(0)) revert ZeroAddress();\n        owner = msg.sender;\n        usdtToken = _usdtToken;\n        entryFee = _entryFee;\n    }\n\n    // ─── Game Session Recording ───────────────────────────────────────────────\n\n    /**\n     * @notice Records a game session on-chain. Free to call — only costs gas.\n     * @dev    Called by the frontend when a player starts a game.\n     *         Creates an auditable record of every session for any wallet.\n     *         Enforces a 30-second cooldown to prevent spam.\n     */\n    function recordPlay() external {\n        // Prevent spam — must be at least 30 seconds since last recording\n        if (\n            playerLastPlayed[msg.sender] > 0 &&\n            block.timestamp < playerLastPlayed[msg.sender] + 30\n        ) {\n            revert TooSoonToRecord();\n        }\n\n        // Increment counters\n        totalSessions += 1;\n        playerSessionCount[msg.sender] += 1;\n        playerLastPlayed[msg.sender] = block.timestamp;\n\n        emit GameSessionRecorded(\n            msg.sender,\n            playerSessionCount[msg.sender],\n            totalSessions,\n            block.timestamp\n        );\n    }\n\n    /**\n     * @notice Returns session stats for a given player.\n     */\n    function getPlayerStats(address player) external view returns (\n        uint256 sessionCount,\n        uint256 lastPlayed\n    ) {\n        return (\n            playerSessionCount[player],\n            playerLastPlayed[player]\n        );\n    }\n\n    // ─── Payment Functions ────────────────────────────────────────────────────\n\n    /**\n     * @notice Pay the entry fee to unlock an extra-life session.\n     */\n    function payEntry() external {\n        if (hasPaidEntry[msg.sender]) revert AlreadyPaid();\n\n        IERC20 usdt = IERC20(usdtToken);\n\n        uint256 allowed = usdt.allowance(msg.sender, address(this));\n        if (allowed < entryFee) revert InsufficientAllowance(entryFee, allowed);\n\n        bool success = usdt.transferFrom(msg.sender, address(this), entryFee);\n        if (!success) revert TransferFailed();\n\n        hasPaidEntry[msg.sender] = true;\n        totalCollected += entryFee;\n\n        emit EntryPaid(msg.sender, entryFee, block.timestamp);\n    }\n\n    /**\n     * @notice Marks a player's paid session as consumed.\n     */\n    function consumeEntry(address player) external onlyOwner {\n        hasPaidEntry[player] = false;\n        emit EntryConsumed(player, block.timestamp);\n    }\n\n    /**\n     * @notice Check if a player has a valid paid session.\n     */\n    function canPlay(address player) external view returns (bool) {\n        return hasPaidEntry[player];\n    }\n\n    // ─── Owner Functions ──────────────────────────────────────────────────────\n\n    function withdraw() external onlyOwner {\n        IERC20 usdt = IERC20(usdtToken);\n        uint256 balance = usdt.balanceOf(address(this));\n        if (balance == 0) revert NoFundsToWithdraw();\n        bool success = usdt.transfer(owner, balance);\n        if (!success) revert TransferFailed();\n        emit FundsWithdrawn(owner, balance, block.timestamp);\n    }\n\n    function setEntryFee(uint256 newFee) external onlyOwner {\n        emit EntryFeeUpdated(entryFee, newFee);\n        entryFee = newFee;\n    }\n\n    function transferOwnership(address newOwner) external onlyOwner {\n        if (newOwner == address(0)) revert ZeroAddress();\n        owner = newOwner;\n    }\n}\n"
+      }
+    }
+  }
+}

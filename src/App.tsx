@@ -9,6 +9,8 @@ import { SplashScreen } from '@/components/SplashScreen';
 import { GameScreen } from '@/components/GameScreen';
 import { PaymentModal } from '@/components/PaymentModal';
 import { Leaderboard } from '@/components/Leaderboard';
+import { AdsPage } from '@/pages/AdsPage';
+import { AdminPage } from '@/pages/AdminPage';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client
@@ -456,6 +458,8 @@ const App = () => {
         <>
             <Routes>
                 <Route path="/" element={<Home />} />
+                <Route path="/ads" element={<AdsPage />} />
+                <Route path="/admin" element={<AdminPage />} />
             </Routes>
             <Toaster />
         </>

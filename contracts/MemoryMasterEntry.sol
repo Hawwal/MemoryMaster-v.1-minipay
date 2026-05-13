@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 /**
  * @title MemoryMasterEntry
- * @notice Handles 0.1 USDT entry fee payments for Memory Master game on Celo Mainnet
- * @dev Accepts ERC20 USDT transfers and tracks which wallets have paid to play
+ * @notice Handles payments and on-chain game session recording for Memory Master
+ * @dev Deployed on Celo Mainnet (chain 42220)
  */
 
 interface IERC20 {
@@ -19,14 +19,23 @@ contract MemoryMasterEntry {
     // ─── State ───────────────────────────────────────────────────────────────
 
     address public owner;
-    address public usdtToken;       // USDT contract on Celo Mainnet
-    uint256 public entryFee;        // In USDT units (6 decimals → 100000 = 0.1 USDT)
+    address public usdtToken;
+    uint256 public entryFee;
 
-    // Tracks whether a player has a valid paid session
+    // Payment tracking
     mapping(address => bool) public hasPaidEntry;
-
-    // Total fees collected
     uint256 public totalCollected;
+
+    // ─── Game Session Recording ───────────────────────────────────────────────
+
+    // Total number of game sessions ever recorded
+    uint256 public totalSessions;
+
+    // Per-wallet session count
+    mapping(address => uint256) public playerSessionCount;
+
+    // Per-wallet last played timestamp
+    mapping(address => uint256) public playerLastPlayed;
 
     // ─── Events ──────────────────────────────────────────────────────────────
 
@@ -34,6 +43,14 @@ contract MemoryMasterEntry {
     event EntryConsumed(address indexed player, uint256 timestamp);
     event FundsWithdrawn(address indexed owner, uint256 amount, uint256 timestamp);
     event EntryFeeUpdated(uint256 oldFee, uint256 newFee);
+
+    // Emitted every time a player starts a game session — free or paid
+    event GameSessionRecorded(
+        address indexed player,
+        uint256 sessionNumber,        // This player's nth session
+        uint256 totalSessionsAllTime, // Global session counter
+        uint256 timestamp
+    );
 
     // ─── Errors ──────────────────────────────────────────────────────────────
 
@@ -43,6 +60,7 @@ contract MemoryMasterEntry {
     error TransferFailed();
     error NoFundsToWithdraw();
     error ZeroAddress();
+    error TooSoonToRecord(); // Prevents spam — min 30s between recordings
 
     // ─── Modifiers ───────────────────────────────────────────────────────────
 
@@ -53,12 +71,6 @@ contract MemoryMasterEntry {
 
     // ─── Constructor ─────────────────────────────────────────────────────────
 
-    /**
-     * @param _usdtToken  Address of USDT token on Celo Mainnet
-     *                    (0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e)
-     * @param _entryFee   Entry fee in USDT smallest units
-     *                    (100000 = 0.1 USDT, since USDT has 6 decimals)
-     */
     constructor(address _usdtToken, uint256 _entryFee) {
         if (_usdtToken == address(0)) revert ZeroAddress();
         owner = msg.sender;
@@ -66,23 +78,62 @@ contract MemoryMasterEntry {
         entryFee = _entryFee;
     }
 
-    // ─── Core Functions ──────────────────────────────────────────────────────
+    // ─── Game Session Recording ───────────────────────────────────────────────
 
     /**
-     * @notice Player calls this to pay the entry fee and unlock a game session.
-     * @dev    Player must first approve this contract to spend `entryFee` USDT.
-     *         Call USDT.approve(contractAddress, entryFee) from the frontend first.
+     * @notice Records a game session on-chain. Free to call — only costs gas.
+     * @dev    Called by the frontend when a player starts a game.
+     *         Creates an auditable record of every session for any wallet.
+     *         Enforces a 30-second cooldown to prevent spam.
+     */
+    function recordPlay() external {
+        // Prevent spam — must be at least 30 seconds since last recording
+        if (
+            playerLastPlayed[msg.sender] > 0 &&
+            block.timestamp < playerLastPlayed[msg.sender] + 30
+        ) {
+            revert TooSoonToRecord();
+        }
+
+        // Increment counters
+        totalSessions += 1;
+        playerSessionCount[msg.sender] += 1;
+        playerLastPlayed[msg.sender] = block.timestamp;
+
+        emit GameSessionRecorded(
+            msg.sender,
+            playerSessionCount[msg.sender],
+            totalSessions,
+            block.timestamp
+        );
+    }
+
+    /**
+     * @notice Returns session stats for a given player.
+     */
+    function getPlayerStats(address player) external view returns (
+        uint256 sessionCount,
+        uint256 lastPlayed
+    ) {
+        return (
+            playerSessionCount[player],
+            playerLastPlayed[player]
+        );
+    }
+
+    // ─── Payment Functions ────────────────────────────────────────────────────
+
+    /**
+     * @notice Pay the entry fee to unlock an extra-life session.
      */
     function payEntry() external {
         if (hasPaidEntry[msg.sender]) revert AlreadyPaid();
 
         IERC20 usdt = IERC20(usdtToken);
 
-        // Check allowance
         uint256 allowed = usdt.allowance(msg.sender, address(this));
         if (allowed < entryFee) revert InsufficientAllowance(entryFee, allowed);
 
-        // Pull USDT from player into this contract
         bool success = usdt.transferFrom(msg.sender, address(this), entryFee);
         if (!success) revert TransferFailed();
 
@@ -93,10 +144,7 @@ contract MemoryMasterEntry {
     }
 
     /**
-     * @notice Marks a player's session as consumed (called after game ends).
-     * @dev    Can only be called by the owner (your backend/server wallet) to
-     *         prevent players from reusing a single payment indefinitely.
-     *         If you want players to call this themselves, remove onlyOwner.
+     * @notice Marks a player's paid session as consumed.
      */
     function consumeEntry(address player) external onlyOwner {
         hasPaidEntry[player] = false;
@@ -110,33 +158,22 @@ contract MemoryMasterEntry {
         return hasPaidEntry[player];
     }
 
-    // ─── Owner Functions ─────────────────────────────────────────────────────
+    // ─── Owner Functions ──────────────────────────────────────────────────────
 
-    /**
-     * @notice Withdraw all collected USDT to the owner wallet.
-     */
     function withdraw() external onlyOwner {
         IERC20 usdt = IERC20(usdtToken);
         uint256 balance = usdt.balanceOf(address(this));
         if (balance == 0) revert NoFundsToWithdraw();
-
         bool success = usdt.transfer(owner, balance);
         if (!success) revert TransferFailed();
-
         emit FundsWithdrawn(owner, balance, block.timestamp);
     }
 
-    /**
-     * @notice Update the entry fee.
-     */
     function setEntryFee(uint256 newFee) external onlyOwner {
         emit EntryFeeUpdated(entryFee, newFee);
         entryFee = newFee;
     }
 
-    /**
-     * @notice Transfer contract ownership.
-     */
     function transferOwnership(address newOwner) external onlyOwner {
         if (newOwner == address(0)) revert ZeroAddress();
         owner = newOwner;
