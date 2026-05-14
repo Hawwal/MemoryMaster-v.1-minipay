@@ -1,17 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import {
   Shield, LogOut, Eye, Check, X, Trash2, Plus, Users,
   MessageSquare, Megaphone, RefreshCw, ExternalLink,
   AlertCircle, CheckCircle2, Clock, Calendar, Loader2,
-  ChevronDown, ChevronUp, Video
+  ChevronDown, ChevronUp, Video, Upload, Link, ImageIcon, PenLine, Wallet
 } from 'lucide-react';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
-  import.meta.env.VITE_SUPABASE_SERVICE_KEY  // service role key bypasses RLS
+  import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
 async function hashPassword(password: string): Promise<string> {
@@ -60,9 +59,13 @@ interface Admin {
   created_at: string;
 }
 
+const AD_TIERS = ['basic', 'standard', 'premium', 'enterprise'];
+
 export const AdminPage: React.FC = () => {
   const navigate = useNavigate();
+  const adFileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Auth state ────────────────────────────────────────────────────────────
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -70,81 +73,75 @@ export const AdminPage: React.FC = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [currentAdmin, setCurrentAdmin] = useState('');
 
+  // ── UI state ──────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<Tab>('ads');
   const [isLoading, setIsLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
   const [expandedAd, setExpandedAd] = useState<string | null>(null);
   const [expandedConsult, setExpandedConsult] = useState<string | null>(null);
 
+  // ── Data state ────────────────────────────────────────────────────────────
   const [ads, setAds] = useState<Ad[]>([]);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [adFilter, setAdFilter] = useState<AdStatus | 'all'>('pending');
 
+  // ── Add Admin form ────────────────────────────────────────────────────────
   const [newAdminUsername, setNewAdminUsername] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
   const [isAddingAdmin, setIsAddingAdmin] = useState(false);
 
-  // Restore session
+  // ── Add Ad form ───────────────────────────────────────────────────────────
+  const [showAddAd, setShowAddAd] = useState(false);
+  const [isSubmittingAd, setIsSubmittingAd] = useState(false);
+  const [adminWallet, setAdminWallet] = useState<string | null>(null);
+  const [isSigning, setIsSigning] = useState(false);
+  const [signatureStatus, setSignatureStatus] = useState<'idle' | 'signing' | 'signed' | 'skipped'>('idle');
+  const [adSignature, setAdSignature] = useState<string | null>(null);
+  const [adUploadProgress, setAdUploadProgress] = useState(0);
+  const [addAdError, setAddAdError] = useState('');
+  const [adMediaMode, setAdMediaMode] = useState<'upload' | 'url'>('upload');
+  const [adMediaFile, setAdMediaFile] = useState<File | null>(null);
+  const [adMediaUrlInput, setAdMediaUrlInput] = useState('');
+  const [adMediaPreview, setAdMediaPreview] = useState('');
+  const [adClickUrl, setAdClickUrl] = useState('');
+  const [adAdvertiserEmail, setAdAdvertiserEmail] = useState('');
+  const [adAdvertiserWallet, setAdAdvertiserWallet] = useState('');
+  const [adTier, setAdTier] = useState('basic');
+  const [adDailyMinutes, setAdDailyMinutes] = useState('5');
+  const [adIntervalSeconds, setAdIntervalSeconds] = useState('3');
+  const [adValidityDays, setAdValidityDays] = useState('7');
+
+  // ── Session restore ───────────────────────────────────────────────────────
   useEffect(() => {
     const saved = sessionStorage.getItem('admin_session');
     if (saved) { setCurrentAdmin(saved); setIsAuthenticated(true); }
   }, []);
 
-  // Fix default password hash on first login
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const fixHash = async () => {
-      const hashed = await hashPassword('12345678910');
-      await supabase.from('admins')
-        .update({ password_hash: hashed })
-        .eq('username', 'hawwal')
-        .eq('password_hash', '$2a$10$placeholder_will_be_replaced');
-    };
-    fixHash();
-  }, [isAuthenticated]);
-
+  // ── Login ─────────────────────────────────────────────────────────────────
   const handleLogin = async () => {
     if (!loginUsername || !loginPassword) { setLoginError('Please enter username and password.'); return; }
     setIsLoggingIn(true);
     setLoginError('');
     try {
-      console.log('[DEBUG] Attempting login for:', loginUsername.toLowerCase());
-      console.log('[DEBUG] Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-      console.log('[DEBUG] Anon key present:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
-
       const { data, error } = await supabase
         .from('admins')
         .select('id, username, password_hash')
         .eq('username', loginUsername.toLowerCase())
         .single();
 
-      console.log('[DEBUG] Supabase data:', data);
-      console.log('[DEBUG] Supabase error:', error);
-
-      if (error || !data) {
-        console.log('[DEBUG] Login failed at data/error check. Error:', error?.message, '| Code:', error?.code);
-        setLoginError('Invalid username or password.');
-        return;
-      }
+      if (error || !data) { setLoginError('Invalid username or password.'); return; }
 
       const hashedInput = await hashPassword(loginPassword);
-      console.log('[DEBUG] Hashed input:  ', hashedInput);
-      console.log('[DEBUG] DB hash:       ', data.password_hash);
-      console.log('[DEBUG] Hashes match:  ', data.password_hash === hashedInput);
-
       if (data.password_hash !== hashedInput) {
-        console.log('[DEBUG] Login failed at hash comparison.');
         setLoginError('Invalid username or password.');
         return;
       }
 
-      console.log('[DEBUG] Login successful!');
       setCurrentAdmin(data.username);
       setIsAuthenticated(true);
       sessionStorage.setItem('admin_session', data.username);
     } catch (e: any) {
-      console.log('[DEBUG] Exception caught:', e);
       setLoginError(e.message || 'Login failed.');
     } finally {
       setIsLoggingIn(false);
@@ -180,7 +177,6 @@ export const AdminPage: React.FC = () => {
   };
 
   // ── Fetchers ──────────────────────────────────────────────────────────────
-
   const fetchAds = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -229,7 +225,6 @@ export const AdminPage: React.FC = () => {
   }, [adFilter]);
 
   // ── Ad actions ────────────────────────────────────────────────────────────
-
   const approveAd = async (ad: Ad) => {
     try {
       const now = new Date();
@@ -265,6 +260,157 @@ export const AdminPage: React.FC = () => {
     } catch (e: any) { showAction('❌ ' + e.message); }
   };
 
+  // ── Admin-created ad ──────────────────────────────────────────────────────
+  const resetAddAdForm = () => {
+    setAdMediaFile(null);
+    setAdMediaUrlInput('');
+    setAdMediaPreview('');
+    setAdClickUrl('');
+    setAdAdvertiserEmail('');
+    setAdAdvertiserWallet('');
+    setAdTier('basic');
+    setAdDailyMinutes('5');
+    setAdIntervalSeconds('3');
+    setAdValidityDays('7');
+    setAddAdError('');
+    setAdUploadProgress(0);
+    setAdMediaMode('upload');
+  };
+
+  const handleAdFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4'];
+    if (!allowed.includes(file.type)) { setAddAdError('Only JPEG, PNG, GIF, or MP4 files allowed.'); return; }
+    if (file.size > 10 * 1024 * 1024) { setAddAdError('File must be under 10MB.'); return; }
+    setAdMediaFile(file);
+    setAddAdError('');
+    setAdMediaPreview(URL.createObjectURL(file));
+  };
+
+  const handleAdMediaUrlChange = (url: string) => {
+    setAdMediaUrlInput(url);
+    setAdMediaPreview(url);
+  };
+
+  const connectAdminWallet = async () => {
+    try {
+      const eth = (window as any).ethereum;
+      if (!eth) { showAction('❌ No wallet detected. Install MetaMask or use MiniPay.'); return; }
+      const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' });
+      if (accounts[0]) { setAdminWallet(accounts[0]); showAction('✅ Wallet connected: ' + accounts[0].slice(0,6) + '...' + accounts[0].slice(-4)); }
+    } catch (e: any) { showAction('❌ Wallet connection failed: ' + e.message); }
+  };
+
+  const signAdUpload = async (adDetails: string): Promise<string | null> => {
+    try {
+      const eth = (window as any).ethereum;
+      if (!eth || !adminWallet) return null;
+      setIsSigning(true);
+      setSignatureStatus('signing');
+      const message = `Memory Master Admin Ad Upload\n\nAdmin: ${adminWallet}\nTimestamp: ${new Date().toISOString()}\nDetails: ${adDetails}\n\nThis signature authorises the ad upload. No gas fee or payment is charged.`;
+      const sig: string = await eth.request({
+        method: 'personal_sign',
+        params: [message, adminWallet],
+      });
+      setAdSignature(sig);
+      setSignatureStatus('signed');
+      return sig;
+    } catch (e: any) {
+      setSignatureStatus('skipped');
+      return null;
+    } finally {
+      setIsSigning(false);
+    }
+  };
+
+  const handleSubmitAdminAd = async () => {
+    setAddAdError('');
+    if (adMediaMode === 'upload' && !adMediaFile) { setAddAdError('Please upload a media file.'); return; }
+    if (adMediaMode === 'url' && !adMediaUrlInput) { setAddAdError('Please enter a media URL.'); return; }
+    if (!adClickUrl) { setAddAdError('Please enter a destination URL.'); return; }
+    if (!adClickUrl.startsWith('http')) { setAddAdError('Destination URL must start with http:// or https://'); return; }
+
+    setIsSubmittingAd(true);
+    setAdUploadProgress(10);
+    setSignatureStatus('idle');
+    setAdSignature(null);
+
+    try {
+      let finalMediaUrl = adMediaUrlInput;
+      let finalMediaType = 'image/jpeg';
+
+      if (adMediaMode === 'upload' && adMediaFile) {
+        const ext = adMediaFile.name.split('.').pop();
+        const fileName = `admin_${Date.now()}.${ext}`;
+        setAdUploadProgress(30);
+
+        const { error: uploadError } = await supabase.storage
+          .from('ad-media')
+          .upload(fileName, adMediaFile, { contentType: adMediaFile.type });
+
+        if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
+
+        setAdUploadProgress(60);
+        const { data: { publicUrl } } = supabase.storage.from('ad-media').getPublicUrl(fileName);
+        finalMediaUrl = publicUrl;
+        finalMediaType = adMediaFile.type;
+      } else {
+        const lower = adMediaUrlInput.toLowerCase();
+        if (lower.includes('.mp4') || lower.includes('video')) finalMediaType = 'video/mp4';
+        else if (lower.includes('.gif')) finalMediaType = 'image/gif';
+        else if (lower.includes('.png')) finalMediaType = 'image/png';
+        else finalMediaType = 'image/jpeg';
+      }
+
+      setAdUploadProgress(70);
+
+      // Free blockchain signature — no gas, no payment
+      const sigDetails = `tier:${adTier} url:${adClickUrl} days:${adValidityDays}`;
+      const sig = adminWallet ? await signAdUpload(sigDetails) : null;
+
+      setAdUploadProgress(85);
+
+      const now = new Date();
+      const expires = new Date(now);
+      expires.setDate(expires.getDate() + parseInt(adValidityDays));
+
+      const { error: dbError } = await supabase.from('ads').insert({
+        advertiser_wallet: adAdvertiserWallet || adminWallet || '0x0000000000000000000000000000000000000000',
+        advertiser_email: adAdvertiserEmail || null,
+        media_url: finalMediaUrl,
+        media_type: finalMediaType,
+        click_url: adClickUrl,
+        tier: adTier,
+        usdt_paid: 0,
+        daily_minutes: parseInt(adDailyMinutes) || 5,
+        interval_seconds: parseInt(adIntervalSeconds) || 3,
+        validity_days: parseInt(adValidityDays) || 7,
+        tx_hash: sig || null,
+        status: 'approved',
+        starts_at: now.toISOString(),
+        expires_at: expires.toISOString(),
+      });
+
+      if (dbError) throw new Error('Failed to save ad: ' + dbError.message);
+
+      setAdUploadProgress(100);
+      showAction(sig ? '✅ Ad created, approved & signed' : '✅ Ad created and approved');
+      setShowAddAd(false);
+      resetAddAdForm();
+      setSignatureStatus('idle');
+      setAdSignature(null);
+      setAdFilter('approved');
+      fetchAds();
+    } catch (e: any) {
+      setAddAdError(e.message || 'Failed to create ad.');
+    } finally {
+      setIsSubmittingAd(false);
+      setAdUploadProgress(0);
+    }
+  };
+
+  // ── Consultation actions ───────────────────────────────────────────────────
   const markRead = async (id: string) => {
     try {
       await supabase.from('consultation_requests').update({ status: 'read' }).eq('id', id);
@@ -272,6 +418,7 @@ export const AdminPage: React.FC = () => {
     } catch (e: any) { showAction('❌ ' + e.message); }
   };
 
+  // ── Admin management ──────────────────────────────────────────────────────
   const addAdmin = async () => {
     if (!newAdminUsername || !newAdminPassword) { showAction('❌ Enter username and password'); return; }
     if (newAdminPassword.length < 8) { showAction('❌ Password must be at least 8 characters'); return; }
@@ -306,7 +453,6 @@ export const AdminPage: React.FC = () => {
   const unreadCount = consultations.filter(c => c.status === 'unread').length;
 
   // ── Login screen ──────────────────────────────────────────────────────────
-
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
@@ -343,7 +489,6 @@ export const AdminPage: React.FC = () => {
   }
 
   // ── Main portal ───────────────────────────────────────────────────────────
-
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Top bar */}
@@ -409,11 +554,219 @@ export const AdminPage: React.FC = () => {
                     }`}>{f}</button>
                 ))}
               </div>
-              <button onClick={fetchAds} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg">
-                <RefreshCw className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={fetchAds} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg">
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => { setShowAddAd(v => !v); resetAddAdForm(); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all">
+                  <Plus className="w-3.5 h-3.5" /> Add Ad
+                </button>
+              </div>
             </div>
 
+            {/* ── Add Ad Form ── */}
+            {showAddAd && (
+              <div className="bg-gray-900 rounded-2xl border border-indigo-800 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-indigo-400" /> Create New Ad
+                  </p>
+                  <button onClick={() => { setShowAddAd(false); resetAddAdForm(); }}
+                    className="text-gray-500 hover:text-white transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Media mode toggle */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">Media</label>
+                  <div className="flex rounded-xl overflow-hidden border border-gray-700 mb-3">
+                    <button
+                      onClick={() => { setAdMediaMode('upload'); setAdMediaPreview(''); setAdMediaUrlInput(''); }}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold transition-all ${adMediaMode === 'upload' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+                      <Upload className="w-3.5 h-3.5" /> Upload File
+                    </button>
+                    <button
+                      onClick={() => { setAdMediaMode('url'); setAdMediaFile(null); setAdMediaPreview(''); }}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold transition-all ${adMediaMode === 'url' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+                      <Link className="w-3.5 h-3.5" /> Paste URL
+                    </button>
+                  </div>
+
+                  {adMediaMode === 'upload' ? (
+                    <div
+                      onClick={() => adFileInputRef.current?.click()}
+                      className="border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors min-h-[80px]">
+                      <input ref={adFileInputRef} type="file" accept="image/jpeg,image/png,image/gif,video/mp4"
+                        onChange={handleAdFileSelect} className="hidden" />
+                      {adMediaFile ? (
+                        <p className="text-xs text-indigo-400 font-medium">{adMediaFile.name}</p>
+                      ) : (
+                        <>
+                          <ImageIcon className="w-6 h-6 text-gray-600 mb-1" />
+                          <p className="text-xs text-gray-500">Click to upload JPEG, PNG, GIF or MP4 (max 10MB)</p>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <input
+                      type="url"
+                      placeholder="https://example.com/image.jpg"
+                      value={adMediaUrlInput}
+                      onChange={(e) => handleAdMediaUrlChange(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+                    />
+                  )}
+
+                  {/* Preview */}
+                  {adMediaPreview && (
+                    <div className="mt-2 rounded-xl overflow-hidden bg-gray-800 max-h-40 flex items-center justify-center">
+                      {(adMediaPreview.includes('.mp4') || adMediaFile?.type === 'video/mp4')
+                        ? <video src={adMediaPreview} controls className="max-h-40 w-full object-contain" />
+                        : <img src={adMediaPreview} alt="Preview" className="max-h-40 object-contain"
+                            onError={() => setAdMediaPreview('')} />
+                      }
+                    </div>
+                  )}
+                </div>
+
+                {/* Destination URL */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">
+                    Destination URL <span className="text-red-400">*</span>
+                  </label>
+                  <input type="url" placeholder="https://advertiser-site.com"
+                    value={adClickUrl} onChange={(e) => setAdClickUrl(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                </div>
+
+                {/* Tier */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">Tier</label>
+                  <select value={adTier} onChange={(e) => setAdTier(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500">
+                    {AD_TIERS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                  </select>
+                </div>
+
+                {/* Schedule fields */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">Daily Min</label>
+                    <input type="number" min="1" placeholder="5"
+                      value={adDailyMinutes} onChange={(e) => setAdDailyMinutes(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">Interval (s)</label>
+                    <input type="number" min="1" placeholder="3"
+                      value={adIntervalSeconds} onChange={(e) => setAdIntervalSeconds(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">Validity (d)</label>
+                    <input type="number" min="1" placeholder="7"
+                      value={adValidityDays} onChange={(e) => setAdValidityDays(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+
+                {/* Optional fields */}
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">
+                      Advertiser Email <span className="text-gray-600 font-normal normal-case">(optional)</span>
+                    </label>
+                    <input type="email" placeholder="advertiser@example.com"
+                      value={adAdvertiserEmail} onChange={(e) => setAdAdvertiserEmail(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">
+                      Advertiser Wallet <span className="text-gray-600 font-normal normal-case">(optional)</span>
+                    </label>
+                    <input type="text" placeholder="0x..."
+                      value={adAdvertiserWallet} onChange={(e) => setAdAdvertiserWallet(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                {isSubmittingAd && adUploadProgress > 0 && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                        style={{ width: `${adUploadProgress}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-500 text-center">{adUploadProgress}% complete</p>
+                  </div>
+                )}
+
+                {/* Error */}
+                {addAdError && (
+                  <div className="flex items-start gap-2 text-red-400 bg-red-900/20 p-3 rounded-xl text-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />{addAdError}
+                  </div>
+                )}
+
+                {/* Blockchain signing panel */}
+                <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <PenLine className="w-4 h-4 text-indigo-400" />
+                      <span className="text-xs font-semibold text-white">Free Admin Signature</span>
+                      <span className="text-xs text-gray-500">(optional · no gas)</span>
+                    </div>
+                    {adminWallet ? (
+                      <span className="text-xs text-green-400 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        {adminWallet.slice(0,6)}...{adminWallet.slice(-4)}
+                      </span>
+                    ) : (
+                      <button onClick={connectAdminWallet}
+                        className="flex items-center gap-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2.5 py-1.5 rounded-lg transition-colors">
+                        <Wallet className="w-3 h-3" /> Connect Wallet
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Signing proves you authorised this ad upload on-chain. It's completely free — no payment or gas required.
+                  </p>
+                  {signatureStatus === 'signed' && adSignature && (
+                    <div className="flex items-center gap-2 text-green-400 bg-green-900/20 p-2 rounded-lg text-xs">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span className="font-mono truncate">{adSignature.slice(0, 30)}…</span>
+                      <span className="text-green-500 shrink-0">Signed ✓</span>
+                    </div>
+                  )}
+                  {signatureStatus === 'skipped' && (
+                    <p className="text-xs text-amber-400">Signature skipped — ad will be saved without a signature.</p>
+                  )}
+                  {signatureStatus === 'signing' && (
+                    <div className="flex items-center gap-2 text-indigo-400 text-xs">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Waiting for wallet signature…
+                    </div>
+                  )}
+                </div>
+
+                {/* Info banner */}
+                <div className="flex items-start gap-2 text-indigo-300 bg-indigo-900/20 p-3 rounded-xl text-xs">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-indigo-400" />
+                  This ad will be immediately <strong className="text-indigo-200">approved</strong> and start running today. Free — no payment required.
+                </div>
+
+                <button onClick={handleSubmitAdminAd} disabled={isSubmittingAd || isSigning}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all">
+                  {isSubmittingAd
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />{isSigning ? 'Signing…' : 'Creating Ad…'}</>
+                    : <><Plus className="w-4 h-4" />Create & Approve Ad</>}
+                </button>
+              </div>
+            )}
+
+            {/* ── Ad list ── */}
             {isLoading ? (
               <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>
             ) : ads.length === 0 ? (
