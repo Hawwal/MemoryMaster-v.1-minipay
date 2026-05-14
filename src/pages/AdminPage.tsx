@@ -109,27 +109,42 @@ export const AdminPage: React.FC = () => {
     setIsLoggingIn(true);
     setLoginError('');
     try {
+      console.log('[DEBUG] Attempting login for:', loginUsername.toLowerCase());
+      console.log('[DEBUG] Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('[DEBUG] Anon key present:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+
       const { data, error } = await supabase
         .from('admins')
         .select('id, username, password_hash')
         .eq('username', loginUsername.toLowerCase())
         .single();
 
-      if (error || !data) { setLoginError('Invalid username or password.'); return; }
+      console.log('[DEBUG] Supabase data:', data);
+      console.log('[DEBUG] Supabase error:', error);
 
-      const hashedInput = await hashPassword(loginPassword);
-      const isDefaultPassword = loginPassword === '12345678910' &&
-        data.password_hash === '$2a$10$placeholder_will_be_replaced';
-
-      if (data.password_hash !== hashedInput && !isDefaultPassword) {
+      if (error || !data) {
+        console.log('[DEBUG] Login failed at data/error check. Error:', error?.message, '| Code:', error?.code);
         setLoginError('Invalid username or password.');
         return;
       }
 
+      const hashedInput = await hashPassword(loginPassword);
+      console.log('[DEBUG] Hashed input:  ', hashedInput);
+      console.log('[DEBUG] DB hash:       ', data.password_hash);
+      console.log('[DEBUG] Hashes match:  ', data.password_hash === hashedInput);
+
+      if (data.password_hash !== hashedInput) {
+        console.log('[DEBUG] Login failed at hash comparison.');
+        setLoginError('Invalid username or password.');
+        return;
+      }
+
+      console.log('[DEBUG] Login successful!');
       setCurrentAdmin(data.username);
       setIsAuthenticated(true);
       sessionStorage.setItem('admin_session', data.username);
     } catch (e: any) {
+      console.log('[DEBUG] Exception caught:', e);
       setLoginError(e.message || 'Login failed.');
     } finally {
       setIsLoggingIn(false);
