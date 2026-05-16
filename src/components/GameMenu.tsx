@@ -1,4 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 import { useNavigate } from 'react-router-dom';
 import { X, User, Settings, Trophy, Share, Volume2, VolumeX, Sun, Moon, Edit3, Save, ArrowLeft, Megaphone, MessageSquare } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -38,6 +44,8 @@ export const GameMenu: React.FC<GameMenuProps> = ({
 }) => {
   const navigate = useNavigate();
   const [editingProfile, setEditingProfile] = useState(false);
+  const [menuBannerAds, setMenuBannerAds] = useState<{id:string;media_url:string;media_type:string;click_url:string;interval_seconds:number}[]>([]);
+  const [menuBannerIdx, setMenuBannerIdx] = useState(0);
   const [userName, setUserName] = useState(initialUserName);
   const [userHandle, setUserHandle] = useState(initialUserHandle);
   const [currentView, setCurrentView] = useState<'main' | 'settings' | 'profile' | 'leaderboard' | 'share'>('main');
@@ -66,6 +74,31 @@ export const GameMenu: React.FC<GameMenuProps> = ({
     onShareClick();
     setCurrentView('share');
   };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchMenuAds = async () => {
+      try {
+        const now = new Date().toISOString();
+        const { data } = await supabase
+          .from('ads')
+          .select('id, media_url, media_type, click_url, interval_seconds')
+          .eq('status', 'approved')
+          .eq('ad_type', 'banner')
+          .lte('starts_at', now)
+          .gte('expires_at', now);
+        if (data && data.length > 0) setMenuBannerAds(data);
+      } catch (e) { /* silent */ }
+    };
+    fetchMenuAds();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (menuBannerAds.length === 0) return;
+    const interval = menuBannerAds[menuBannerIdx]?.interval_seconds || 10;
+    const t = setInterval(() => setMenuBannerIdx(i => (i + 1) % menuBannerAds.length), interval * 1000);
+    return () => clearInterval(t);
+  }, [menuBannerAds, menuBannerIdx]);
 
   // Share View with back arrow
   if (currentView === 'share') {
@@ -374,6 +407,23 @@ export const GameMenu: React.FC<GameMenuProps> = ({
             </DialogTitle>
           </DialogHeader>
           
+          {/* ── Banner Ad in Menu ── */}
+          {menuBannerAds.length > 0 && (() => {
+            const ad = menuBannerAds[menuBannerIdx];
+            return (
+              <a href={ad.click_url} target="_blank" rel="noopener noreferrer"
+                className="block w-full overflow-hidden rounded-xl mb-1 bg-gray-100 border border-gray-200"
+                style={{ height: '40px' }} title="Advertisement">
+                {ad.media_type.startsWith('video') ? (
+                  <video src={ad.media_url} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+                ) : (
+                  <img src={ad.media_url} alt="Ad" className="w-full h-full object-cover"
+                    onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }} />
+                )}
+              </a>
+            );
+          })()}
+
           <div className="space-y-6">
             {/* Quick Profile Preview */}
             <div className="space-y-4">

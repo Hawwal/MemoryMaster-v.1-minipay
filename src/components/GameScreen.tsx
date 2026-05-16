@@ -5,7 +5,13 @@ import { GameMenu } from './GameMenu';
 import { GameOverScreen } from './GameOverScreen';
 import { generatePolyomino, getMemorizationTime, getRecallTime, getShapeSize, calculateAccuracy } from '@/lib/gameLogic';
 import { WalletService } from '@/lib/walletService';
-import { Timer, Target, Trophy, AlertCircle, ArrowRight, RotateCcw, Home } from 'lucide-react';
+import { Timer, Target, Trophy, AlertCircle, ArrowRight, RotateCcw, Home, X } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -65,6 +71,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [showRetryPayment, setShowRetryPayment] = useState(false);
   const [showHomeConfirm, setShowHomeConfirm] = useState(false);
 
+  // ── Ad state ──────────────────────────────────────────────────────────────
+  interface AdRecord { id: string; media_url: string; media_type: string; click_url: string; interval_seconds: number; ad_type: string; }
+  const [bannerAds, setBannerAds] = useState<AdRecord[]>([]);
+  const [popupAds, setPopupAds] = useState<AdRecord[]>([]);
+  const [currentBannerIdx, setCurrentBannerIdx] = useState(0);
+  const [currentPopupIdx, setCurrentPopupIdx] = useState(0);
+  const [showPopupAd, setShowPopupAd] = useState(false);
+  const [popupDismissable, setPopupDismissable] = useState(false);
+  const bannerRotateRef = useRef<NodeJS.Timeout | null>(null);
+
   const [savedTimerState, setSavedTimerState] = useState<{time: number, phase: 'memorizing' | 'recalling' | 'idle'}>({time: 0, phase: 'idle'});
 
   const isMobile = useIsMobile();
@@ -85,6 +101,36 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   useEffect(() => {
     isPausedRef.current = gameState.isPaused;
   }, [gameState.isPaused]);
+
+  // ── Fetch approved ads ────────────────────────────────────────────────────
+  useEffect(() => {
+    const fetchAds = async () => {
+      try {
+        const now = new Date().toISOString();
+        const { data } = await supabase
+          .from('ads')
+          .select('id, media_url, media_type, click_url, interval_seconds, ad_type')
+          .eq('status', 'approved')
+          .lte('starts_at', now)
+          .gte('expires_at', now);
+        if (data) {
+          setBannerAds(data.filter((a: any) => a.ad_type === 'banner'));
+          setPopupAds(data.filter((a: any) => a.ad_type === 'popup'));
+        }
+      } catch (e) { /* silent fail — game continues without ads */ }
+    };
+    fetchAds();
+  }, []);
+
+  // ── Banner rotation ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (bannerAds.length === 0) return;
+    const interval = bannerAds[currentBannerIdx]?.interval_seconds || 10;
+    bannerRotateRef.current = setInterval(() => {
+      setCurrentBannerIdx(i => (i + 1) % bannerAds.length);
+    }, interval * 1000);
+    return () => { if (bannerRotateRef.current) clearInterval(bannerRotateRef.current); };
+  }, [bannerAds, currentBannerIdx]);
 
   // ── Audio setup — runs ONCE on mount, cleans up on unmount ────────────────
   useEffect(() => {
@@ -314,7 +360,16 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     }
   };
 
+  const showPopupAdBetweenLevels = () => {
+    if (popupAds.length === 0) return;
+    setCurrentPopupIdx(i => (i + 1) % popupAds.length);
+    setPopupDismissable(false);
+    setShowPopupAd(true);
+    setTimeout(() => setPopupDismissable(true), 3000);
+  };
+
   const handleSuccessNext = () => {
+    showPopupAdBetweenLevels();
     setShowSuccessPopup(false);
     setLevelPassed(false);
     setLevelFailed(false);
@@ -536,6 +591,54 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           }}
           onHomeClick={handleHomeButtonPress}
         />
+
+        {/* ── Banner Ad strip (728×90) ── */}
+        {bannerAds.length > 0 && (() => {
+          const ad = bannerAds[currentBannerIdx];
+          return (
+            <a href={ad.click_url} target="_blank" rel="noopener noreferrer"
+              className="block w-full overflow-hidden rounded-lg mb-2 bg-gray-100 border border-gray-200"
+              style={{ height: '45px' }} title="Advertisement">
+              {ad.media_type.startsWith('video') ? (
+                <video src={ad.media_url} autoPlay muted loop playsInline
+                  className="w-full h-full object-cover" />
+              ) : (
+                <img src={ad.media_url} alt="Advertisement"
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }} />
+              )}
+            </a>
+          );
+        })()}
+
+        {/* ── Popup Ad overlay (400×300) ── */}
+        {showPopupAd && popupAds.length > 0 && (() => {
+          const ad = popupAds[currentPopupIdx];
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+              <div className="bg-white rounded-2xl overflow-hidden shadow-2xl relative" style={{width:'min(400px,90vw)'}}>
+                <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
+                  <span className="text-xs text-gray-400">Advertisement</span>
+                  <button
+                    onClick={() => setShowPopupAd(false)}
+                    disabled={!popupDismissable}
+                    className={`text-xs px-2 py-1 rounded transition-all ${popupDismissable ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-200' : 'text-gray-300 cursor-not-allowed'}`}>
+                    {popupDismissable ? <X className="w-3.5 h-3.5" /> : 'Skip in 3s'}
+                  </button>
+                </div>
+                <a href={ad.click_url} target="_blank" rel="noopener noreferrer"
+                  className="block" style={{aspectRatio:'4/3'}}>
+                  {ad.media_type.startsWith('video') ? (
+                    <video src={ad.media_url} autoPlay muted loop playsInline
+                      className="w-full h-full object-cover" />
+                  ) : (
+                    <img src={ad.media_url} alt="Advertisement" className="w-full h-full object-cover" />
+                  )}
+                </a>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="flex-1 flex items-center justify-center">
           <GameGrid

@@ -36,6 +36,7 @@ interface Ad {
   interval_seconds: number;
   validity_days: number;
   status: AdStatus;
+  ad_type: 'banner' | 'popup';
   tx_hash: string | null;
   starts_at: string | null;
   expires_at: string | null;
@@ -101,6 +102,15 @@ export const AdminPage: React.FC = () => {
   const [adUploadProgress, setAdUploadProgress] = useState(0);
   const [addAdError, setAddAdError] = useState('');
   const [adMediaMode, setAdMediaMode] = useState<'upload' | 'url'>('upload');
+  const [adAdType, setAdAdType] = useState<'banner' | 'popup'>('banner');
+  const bannerFileRef = React.useRef<HTMLInputElement>(null);
+  const popupFileRef = React.useRef<HTMLInputElement>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState('');
+  const [bannerUrlInput, setBannerUrlInput] = useState('');
+  const [popupFile, setPopupFile] = useState<File | null>(null);
+  const [popupPreview, setPopupPreview] = useState('');
+  const [popupUrlInput, setPopupUrlInput] = useState('');
   const [adMediaFile, setAdMediaFile] = useState<File | null>(null);
   const [adMediaUrlInput, setAdMediaUrlInput] = useState('');
   const [adMediaPreview, setAdMediaPreview] = useState('');
@@ -265,6 +275,9 @@ export const AdminPage: React.FC = () => {
     setAdMediaFile(null);
     setAdMediaUrlInput('');
     setAdMediaPreview('');
+    setBannerFile(null); setBannerPreview(''); setBannerUrlInput('');
+    setPopupFile(null); setPopupPreview(''); setPopupUrlInput('');
+    setAdAdType('banner');
     setAdClickUrl('');
     setAdAdvertiserEmail('');
     setAdAdvertiserWallet('');
@@ -291,6 +304,18 @@ export const AdminPage: React.FC = () => {
   const handleAdMediaUrlChange = (url: string) => {
     setAdMediaUrlInput(url);
     setAdMediaPreview(url);
+  };
+
+  const handleSlotFileSelect = (slot: 'banner' | 'popup', e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4'];
+    if (!allowed.includes(file.type)) { setAddAdError('Only JPEG, PNG, GIF, or MP4 files allowed.'); return; }
+    if (file.size > 10 * 1024 * 1024) { setAddAdError('File must be under 10MB.'); return; }
+    setAddAdError('');
+    const preview = URL.createObjectURL(file);
+    if (slot === 'banner') { setBannerFile(file); setBannerPreview(preview); }
+    else { setPopupFile(file); setPopupPreview(preview); }
   };
 
   const connectAdminWallet = async () => {
@@ -326,10 +351,15 @@ export const AdminPage: React.FC = () => {
 
   const handleSubmitAdminAd = async () => {
     setAddAdError('');
-    if (adMediaMode === 'upload' && !adMediaFile) { setAddAdError('Please upload a media file.'); return; }
-    if (adMediaMode === 'url' && !adMediaUrlInput) { setAddAdError('Please enter a media URL.'); return; }
     if (!adClickUrl) { setAddAdError('Please enter a destination URL.'); return; }
     if (!adClickUrl.startsWith('http')) { setAddAdError('Destination URL must start with http:// or https://'); return; }
+    if (adAdType === 'banner') {
+      if (adMediaMode === 'upload' && !bannerFile) { setAddAdError('Please upload a banner image/video (728×90).'); return; }
+      if (adMediaMode === 'url' && !bannerUrlInput) { setAddAdError('Please enter a banner media URL.'); return; }
+    } else {
+      if (adMediaMode === 'upload' && !popupFile) { setAddAdError('Please upload a popup image/video (400×300).'); return; }
+      if (adMediaMode === 'url' && !popupUrlInput) { setAddAdError('Please enter a popup media URL.'); return; }
+    }
 
     setIsSubmittingAd(true);
     setAdUploadProgress(10);
@@ -337,26 +367,29 @@ export const AdminPage: React.FC = () => {
     setAdSignature(null);
 
     try {
-      let finalMediaUrl = adMediaUrlInput;
+      let finalMediaUrl = '';
       let finalMediaType = 'image/jpeg';
+      const activeFile = adAdType === 'banner' ? bannerFile : popupFile;
+      const activeUrlInput = adAdType === 'banner' ? bannerUrlInput : popupUrlInput;
 
-      if (adMediaMode === 'upload' && adMediaFile) {
-        const ext = adMediaFile.name.split('.').pop();
-        const fileName = `admin_${Date.now()}.${ext}`;
+      if (adMediaMode === 'upload' && activeFile) {
+        const ext = activeFile.name.split('.').pop();
+        const fileName = `admin_${adAdType}_${Date.now()}.${ext}`;
         setAdUploadProgress(30);
 
         const { error: uploadError } = await supabase.storage
           .from('ad-media')
-          .upload(fileName, adMediaFile, { contentType: adMediaFile.type });
+          .upload(fileName, activeFile, { contentType: activeFile.type });
 
         if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
 
         setAdUploadProgress(60);
         const { data: { publicUrl } } = supabase.storage.from('ad-media').getPublicUrl(fileName);
         finalMediaUrl = publicUrl;
-        finalMediaType = adMediaFile.type;
+        finalMediaType = activeFile.type;
       } else {
-        const lower = adMediaUrlInput.toLowerCase();
+        finalMediaUrl = activeUrlInput;
+        const lower = activeUrlInput.toLowerCase();
         if (lower.includes('.mp4') || lower.includes('video')) finalMediaType = 'video/mp4';
         else if (lower.includes('.gif')) finalMediaType = 'image/gif';
         else if (lower.includes('.png')) finalMediaType = 'image/png';
@@ -386,6 +419,7 @@ export const AdminPage: React.FC = () => {
         daily_minutes: parseInt(adDailyMinutes) || 5,
         interval_seconds: parseInt(adIntervalSeconds) || 3,
         validity_days: parseInt(adValidityDays) || 7,
+        ad_type: adAdType,
         tx_hash: sig || null,
         status: 'approved',
         starts_at: now.toISOString(),
@@ -579,56 +613,102 @@ export const AdminPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Media mode toggle */}
-                <div>
-                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 block">Media</label>
-                  <div className="flex rounded-xl overflow-hidden border border-gray-700 mb-3">
-                    <button
-                      onClick={() => { setAdMediaMode('upload'); setAdMediaPreview(''); setAdMediaUrlInput(''); }}
+                {/* Ad Type + Media Mode toggles */}
+                <div className="space-y-3">
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block">Ad Slot</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { type: 'banner', label: 'Banner', dims: '728 × 90 px', desc: 'Game header bar' },
+                      { type: 'popup',  label: 'Popup',  dims: '400 × 300 px', desc: 'Between levels' },
+                    ] as const).map(({ type, label, dims, desc }) => (
+                      <button key={type} onClick={() => setAdAdType(type)}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${adAdType === type ? 'border-indigo-500 bg-indigo-950/40' : 'border-gray-700 bg-gray-800/40 hover:border-gray-600'}`}>
+                        <p className={`text-xs font-bold mb-0.5 ${adAdType === type ? 'text-indigo-400' : 'text-gray-300'}`}>{label}</p>
+                        <p className="text-xs font-mono text-gray-400">{dims}</p>
+                        <p className="text-xs text-gray-600">{desc}</p>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex rounded-xl overflow-hidden border border-gray-700">
+                    <button onClick={() => setAdMediaMode('upload')}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold transition-all ${adMediaMode === 'upload' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
                       <Upload className="w-3.5 h-3.5" /> Upload File
                     </button>
-                    <button
-                      onClick={() => { setAdMediaMode('url'); setAdMediaFile(null); setAdMediaPreview(''); }}
+                    <button onClick={() => setAdMediaMode('url')}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold transition-all ${adMediaMode === 'url' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
                       <Link className="w-3.5 h-3.5" /> Paste URL
                     </button>
                   </div>
 
-                  {adMediaMode === 'upload' ? (
-                    <div
-                      onClick={() => adFileInputRef.current?.click()}
-                      className="border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors min-h-[80px]">
-                      <input ref={adFileInputRef} type="file" accept="image/jpeg,image/png,image/gif,video/mp4"
-                        onChange={handleAdFileSelect} className="hidden" />
-                      {adMediaFile ? (
-                        <p className="text-xs text-indigo-400 font-medium">{adMediaFile.name}</p>
-                      ) : (
-                        <>
-                          <ImageIcon className="w-6 h-6 text-gray-600 mb-1" />
-                          <p className="text-xs text-gray-500">Click to upload JPEG, PNG, GIF or MP4 (max 10MB)</p>
-                        </>
-                      )}
-                    </div>
+                  {adAdType === 'banner' ? (
+                    adMediaMode === 'upload' ? (
+                      <div>
+                        <input ref={bannerFileRef} type="file" accept="image/jpeg,image/png,image/gif,video/mp4"
+                          onChange={(e) => handleSlotFileSelect('banner', e)} className="hidden" />
+                        <div onClick={() => bannerFileRef.current?.click()}
+                          className="border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors min-h-[72px]">
+                          {bannerFile ? (
+                            <p className="text-xs text-indigo-400 font-medium">{bannerFile.name}</p>
+                          ) : (
+                            <><ImageIcon className="w-5 h-5 text-gray-600 mb-1" />
+                            <p className="text-xs text-gray-500">Banner — 728×90 px · JPEG/GIF/MP4 · max 10MB</p></>
+                          )}
+                        </div>
+                        {bannerPreview && (
+                          <div className="mt-2 rounded-xl overflow-hidden bg-gray-800 flex items-center justify-center" style={{height:'45px'}}>
+                            {bannerFile?.type.startsWith('video')
+                              ? <video src={bannerPreview} className="w-full h-full object-contain" />
+                              : <img src={bannerPreview} alt="Banner preview" className="w-full h-full object-contain" onError={() => setBannerPreview('')} />}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <input type="url" placeholder="https://example.com/banner.jpg (728×90)"
+                          value={bannerUrlInput} onChange={(e) => setBannerUrlInput(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                        {bannerUrlInput && (
+                          <div className="mt-2 rounded-xl overflow-hidden bg-gray-800 flex items-center justify-center" style={{height:'45px'}}>
+                            <img src={bannerUrlInput} alt="Banner preview" className="w-full h-full object-contain" onError={(e) => (e.currentTarget.style.display='none')} />
+                          </div>
+                        )}
+                      </div>
+                    )
                   ) : (
-                    <input
-                      type="url"
-                      placeholder="https://example.com/image.jpg"
-                      value={adMediaUrlInput}
-                      onChange={(e) => handleAdMediaUrlChange(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500"
-                    />
-                  )}
-
-                  {/* Preview */}
-                  {adMediaPreview && (
-                    <div className="mt-2 rounded-xl overflow-hidden bg-gray-800 max-h-40 flex items-center justify-center">
-                      {(adMediaPreview.includes('.mp4') || adMediaFile?.type === 'video/mp4')
-                        ? <video src={adMediaPreview} controls className="max-h-40 w-full object-contain" />
-                        : <img src={adMediaPreview} alt="Preview" className="max-h-40 object-contain"
-                            onError={() => setAdMediaPreview('')} />
-                      }
-                    </div>
+                    adMediaMode === 'upload' ? (
+                      <div>
+                        <input ref={popupFileRef} type="file" accept="image/jpeg,image/png,image/gif,video/mp4"
+                          onChange={(e) => handleSlotFileSelect('popup', e)} className="hidden" />
+                        <div onClick={() => popupFileRef.current?.click()}
+                          className="border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors min-h-[100px]">
+                          {popupFile ? (
+                            <p className="text-xs text-indigo-400 font-medium">{popupFile.name}</p>
+                          ) : (
+                            <><ImageIcon className="w-5 h-5 text-gray-600 mb-1" />
+                            <p className="text-xs text-gray-500">Popup — 400×300 px · JPEG/GIF/MP4 · max 10MB</p></>
+                          )}
+                        </div>
+                        {popupPreview && (
+                          <div className="mt-2 rounded-xl overflow-hidden bg-gray-800 flex items-center justify-center" style={{maxHeight:'150px'}}>
+                            {popupFile?.type.startsWith('video')
+                              ? <video src={popupPreview} controls className="w-full max-h-36 object-contain" />
+                              : <img src={popupPreview} alt="Popup preview" className="w-full max-h-36 object-contain" onError={() => setPopupPreview('')} />}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <input type="url" placeholder="https://example.com/popup.jpg (400×300)"
+                          value={popupUrlInput} onChange={(e) => setPopupUrlInput(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" />
+                        {popupUrlInput && (
+                          <div className="mt-2 rounded-xl overflow-hidden bg-gray-800 flex items-center justify-center" style={{maxHeight:'150px'}}>
+                            <img src={popupUrlInput} alt="Popup preview" className="w-full max-h-36 object-contain" onError={(e) => (e.currentTarget.style.display='none')} />
+                          </div>
+                        )}
+                      </div>
+                    )
                   )}
                 </div>
 
@@ -789,6 +869,7 @@ export const AdminPage: React.FC = () => {
                         {ad.status}
                       </span>
                       <span className="text-xs text-gray-500">{ad.tier} · {ad.usdt_paid} USDT</span>
+                      {ad.ad_type && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ad.ad_type === 'banner' ? 'bg-blue-900/40 text-blue-400' : 'bg-purple-900/40 text-purple-400'}`}>{ad.ad_type}</span>}
                     </div>
                     <p className="text-sm text-white truncate">{ad.click_url}</p>
                     <p className="text-xs text-gray-500">{formatAddress(ad.advertiser_wallet)}</p>

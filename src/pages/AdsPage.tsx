@@ -21,7 +21,8 @@ type Step = 'home' | 'ad-tier' | 'ad-upload' | 'ad-success' |
 export const AdsPage: React.FC = () => {
   const navigate = useNavigate();
   const walletServiceRef = useRef<WalletService | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const bannerFileInputRef = useRef<HTMLInputElement>(null);
+  const popupFileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<Step>('home');
   const [walletAddress, setWalletAddress] = useState('');
@@ -33,6 +34,10 @@ export const AdsPage: React.FC = () => {
   // Ad state
   const [selectedTier, setSelectedTier] = useState<AdTier | null>(null);
   const [intervalSeconds, setIntervalSeconds] = useState(3);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState('');
+  const [popupFile, setPopupFile] = useState<File | null>(null);
+  const [popupPreview, setPopupPreview] = useState('');
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState('');
   const [clickUrl, setClickUrl] = useState('');
@@ -63,20 +68,21 @@ export const AdsPage: React.FC = () => {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSlotFileSelect = (slot: 'banner' | 'popup', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const allowed = ['image/jpeg', 'image/gif', 'video/mp4'];
-    if (!allowed.includes(file.type)) { setError('Only JPEG, GIF, or MP4 files are allowed.'); return; }
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4'];
+    if (!allowed.includes(file.type)) { setError('Only JPEG, PNG, GIF, or MP4 files are allowed.'); return; }
     if (file.size > 10 * 1024 * 1024) { setError('File must be under 10MB.'); return; }
-    setMediaFile(file);
     setError('');
-    setMediaPreview(URL.createObjectURL(file));
+    const preview = URL.createObjectURL(file);
+    if (slot === 'banner') { setBannerFile(file); setBannerPreview(preview); }
+    else { setPopupFile(file); setPopupPreview(preview); }
   };
 
   const handleAdPayment = async () => {
     if (!selectedTier) return;
-    if (!mediaFile) { setError('Please upload your ad creative.'); return; }
+    if (!bannerFile && !popupFile) { setError('Please upload at least one ad creative (banner or popup).'); return; }
     if (!clickUrl) { setError('Please enter a destination URL.'); return; }
     if (!clickUrl.startsWith('http')) { setError('URL must start with http:// or https://'); return; }
     if (!walletAddress) { setError('Please connect your wallet first.'); return; }
@@ -85,35 +91,29 @@ export const AdsPage: React.FC = () => {
     setError('');
 
     try {
-      // 1. Upload media
-      setUploadProgress(20);
-      const ext = mediaFile.name.split('.').pop();
-      const fileName = `${Date.now()}_${walletAddress.slice(2, 8)}.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('ad-media')
-        .upload(fileName, mediaFile, { contentType: mediaFile.type });
-
-      if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
-
-      setUploadProgress(50);
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('ad-media')
-        .getPublicUrl(fileName);
-
-      // 2. Pay on-chain
-      setUploadProgress(65);
+      // 2. Pay on-chain first (shared payment covers both slots)
+      setUploadProgress(10);
       const result = await walletServiceRef.current!.payForAd(selectedTier, intervalSeconds);
+      setUploadProgress(30);
 
-      setUploadProgress(85);
+      // Helper to upload one slot
+      const uploadSlot = async (file: File, slot: 'banner' | 'popup') => {
+        const ext = file.name.split('.').pop();
+        const fileName = `${slot}_${Date.now()}_${walletAddress.slice(2, 8)}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from('ad-media')
+          .upload(fileName, file, { contentType: file.type });
+        if (uploadError) throw new Error(`${slot} upload failed: ` + uploadError.message);
+        const { data: { publicUrl } } = supabase.storage.from('ad-media').getPublicUrl(fileName);
+        return { publicUrl, mediaType: file.type };
+      };
 
-      // 3. Save to Supabase
-      const { error: dbError } = await supabase.from('ads').insert({
+      const now = new Date();
+      const expires = new Date(now);
+      expires.setDate(expires.getDate() + selectedTier.validityDays);
+      const baseRow = {
         advertiser_wallet: result.walletAddress,
         advertiser_email: advertiserEmail || null,
-        media_url: publicUrl,
-        media_type: mediaFile.type,
         click_url: clickUrl,
         tier: selectedTier.id,
         usdt_paid: parseFloat(selectedTier.usdtAmount),
@@ -122,8 +122,22 @@ export const AdsPage: React.FC = () => {
         validity_days: selectedTier.validityDays,
         tx_hash: result.txHash,
         status: 'pending',
-      });
+      };
 
+      const inserts: any[] = [];
+      if (bannerFile) {
+        setUploadProgress(50);
+        const { publicUrl, mediaType } = await uploadSlot(bannerFile, 'banner');
+        inserts.push({ ...baseRow, media_url: publicUrl, media_type: mediaType, ad_type: 'banner' });
+      }
+      if (popupFile) {
+        setUploadProgress(70);
+        const { publicUrl, mediaType } = await uploadSlot(popupFile, 'popup');
+        inserts.push({ ...baseRow, media_url: publicUrl, media_type: mediaType, ad_type: 'popup' });
+      }
+
+      setUploadProgress(85);
+      const { error: dbError } = await supabase.from('ads').insert(inserts);
       if (dbError) throw new Error('Failed to save ad: ' + dbError.message);
 
       setUploadProgress(100);
@@ -344,30 +358,73 @@ export const AdsPage: React.FC = () => {
         <p className="text-xs text-gray-400 mt-0.5">JPEG · GIF · MP4 — max 10MB</p>
       </div>
 
-      {/* Upload zone */}
-      <div onClick={() => fileInputRef.current?.click()}
-        className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all ${
-          mediaFile ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
-        }`}>
-        <input ref={fileInputRef} type="file" accept="image/jpeg,image/gif,video/mp4"
-          onChange={handleFileSelect} className="hidden" />
-        {mediaPreview ? (
-          <div className="space-y-2">
-            {mediaFile?.type.startsWith('video') ? (
-              <video src={mediaPreview} className="w-full max-h-40 rounded-lg object-contain mx-auto" controls />
-            ) : (
-              <img src={mediaPreview} alt="Preview" className="w-full max-h-40 rounded-lg object-contain mx-auto" />
-            )}
-            <p className="text-xs text-indigo-600 font-medium">{mediaFile?.name}</p>
-            <p className="text-xs text-gray-400">Click to change</p>
+      {/* Hidden file inputs */}
+      <input ref={bannerFileInputRef} type="file" accept="image/jpeg,image/png,image/gif,video/mp4"
+        onChange={(e) => handleSlotFileSelect('banner', e)} className="hidden" />
+      <input ref={popupFileInputRef} type="file" accept="image/jpeg,image/png,image/gif,video/mp4"
+        onChange={(e) => handleSlotFileSelect('popup', e)} className="hidden" />
+
+      {/* Ad slot upload cards */}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ad Creatives <span className="text-gray-400 font-normal normal-case">(upload at least one)</span></p>
+
+        {/* Banner slot */}
+        <div className={`rounded-2xl border-2 overflow-hidden transition-all ${bannerFile ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'}`}>
+          <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+            <div>
+              <span className="text-xs font-bold text-gray-700">Banner Ad</span>
+              <span className="ml-2 text-xs font-mono text-gray-400">728 × 90 px</span>
+              <span className="ml-2 text-xs text-gray-400">· Game header bar</span>
+            </div>
+            {bannerFile && <span className="text-xs text-green-600 font-medium">✓ Uploaded</span>}
           </div>
-        ) : (
-          <div className="space-y-2">
-            <Upload className="w-8 h-8 text-gray-300 mx-auto" />
-            <p className="text-sm font-medium text-gray-600">Click to upload</p>
-            <p className="text-xs text-gray-400">Banner: 728×90px · Popup: 400×300px</p>
+          {bannerPreview ? (
+            <div className="p-2 space-y-1">
+              <div className="bg-white rounded-lg overflow-hidden flex items-center justify-center" style={{height:'45px'}}>
+                {bannerFile?.type.startsWith('video')
+                  ? <video src={bannerPreview} className="w-full h-full object-contain" />
+                  : <img src={bannerPreview} alt="Banner" className="w-full h-full object-contain" />}
+              </div>
+              <button onClick={() => bannerFileInputRef.current?.click()}
+                className="text-xs text-indigo-500 hover:text-indigo-700 w-full text-center">Change file</button>
+            </div>
+          ) : (
+            <button onClick={() => bannerFileInputRef.current?.click()}
+              className="w-full p-4 flex flex-col items-center gap-1.5 hover:bg-gray-50 transition-colors">
+              <Upload className="w-5 h-5 text-gray-300" />
+              <p className="text-xs text-gray-500">Click to upload · JPEG/GIF/MP4 · max 10MB</p>
+            </button>
+          )}
+        </div>
+
+        {/* Popup slot */}
+        <div className={`rounded-2xl border-2 overflow-hidden transition-all ${popupFile ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'}`}>
+          <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+            <div>
+              <span className="text-xs font-bold text-gray-700">Popup Ad</span>
+              <span className="ml-2 text-xs font-mono text-gray-400">400 × 300 px</span>
+              <span className="ml-2 text-xs text-gray-400">· Between levels</span>
+            </div>
+            {popupFile && <span className="text-xs text-green-600 font-medium">✓ Uploaded</span>}
           </div>
-        )}
+          {popupPreview ? (
+            <div className="p-2 space-y-1">
+              <div className="bg-white rounded-lg overflow-hidden flex items-center justify-center" style={{maxHeight:'120px'}}>
+                {popupFile?.type.startsWith('video')
+                  ? <video src={popupPreview} controls className="w-full max-h-28 object-contain" />
+                  : <img src={popupPreview} alt="Popup" className="w-full max-h-28 object-contain" />}
+              </div>
+              <button onClick={() => popupFileInputRef.current?.click()}
+                className="text-xs text-indigo-500 hover:text-indigo-700 w-full text-center">Change file</button>
+            </div>
+          ) : (
+            <button onClick={() => popupFileInputRef.current?.click()}
+              className="w-full p-4 flex flex-col items-center gap-1.5 hover:bg-gray-50 transition-colors">
+              <Upload className="w-5 h-5 text-gray-300" />
+              <p className="text-xs text-gray-500">Click to upload · JPEG/GIF/MP4 · max 10MB</p>
+            </button>
+          )}
+        </div>
       </div>
 
       <div>
@@ -418,7 +475,7 @@ export const AdsPage: React.FC = () => {
         </div>
       )}
 
-      <button onClick={handleAdPayment} disabled={isProcessing || !mediaFile || !clickUrl}
+      <button onClick={handleAdPayment} disabled={isProcessing || (!bannerFile && !popupFile) || !clickUrl}
         className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2">
         {isProcessing ? <><Loader2 className="w-4 h-4 animate-spin" />Processing...</> : <>Pay {selectedTier?.usdtAmount} USDT & Submit</>}
       </button>
@@ -441,7 +498,7 @@ export const AdsPage: React.FC = () => {
         <p>• {selectedTier?.dailyMinutes} min/day starts from approval date</p>
         <p>• Ad runs for {selectedTier?.validityDays} days total</p>
       </div>
-      <button onClick={() => { setStep('home'); setMediaFile(null); setMediaPreview(''); setClickUrl(''); setSelectedTier(null); setAdvertiserEmail(''); }}
+      <button onClick={() => { setStep('home'); setMediaFile(null); setMediaPreview(''); setBannerFile(null); setBannerPreview(''); setPopupFile(null); setPopupPreview(''); setClickUrl(''); setSelectedTier(null); setAdvertiserEmail(''); }}
         className="w-full py-3.5 bg-indigo-600 text-white rounded-2xl font-bold">Done</button>
     </div>
   );
