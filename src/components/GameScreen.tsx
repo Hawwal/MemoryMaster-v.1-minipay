@@ -470,6 +470,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     setShowRetryPayment(true);
   };
 
+  const handleBackToMenu = () => {
+    stopAllTimers();
+    onGoHome(1, 0, 3);
+  };
+
   // Cancel on the retry payment modal — go home for a fresh game, no resume state
   const handleRetryPaymentCancel = () => {
     setShowRetryPayment(false);
@@ -524,7 +529,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           highestLevel={gameState.level}
           onRetry={handleRetry}
           // Back to Menu shows leaderboard as originally intended
-          onBackToMenu={() => onGameEnd(gameState.score, gameState.level)}
+          onBackToMenu={handleBackToMenu}
+          userName={localStorage.getItem('userName') || 'Player'}
+          userHandle={localStorage.getItem('userHandle') || 'player'}
         />
 
         {/* Retry Payment Modal */}
