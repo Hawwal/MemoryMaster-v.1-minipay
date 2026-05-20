@@ -5,7 +5,7 @@ import { GameMenu } from './GameMenu';
 import { GameOverScreen } from './GameOverScreen';
 import { generatePolyomino, getMemorizationTime, getRecallTime, getShapeSize, calculateAccuracy } from '@/lib/gameLogic';
 import { WalletService } from '@/lib/walletService';
-import { Timer, Target, Trophy, AlertCircle, ArrowRight, RotateCcw, Home, X } from 'lucide-react';
+import { Timer, Target, Trophy, AlertCircle, ArrowRight, RotateCcw, Home } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -77,8 +77,6 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   const [popupAds, setPopupAds] = useState<AdRecord[]>([]);
   const [currentBannerIdx, setCurrentBannerIdx] = useState(0);
   const [currentPopupIdx, setCurrentPopupIdx] = useState(0);
-  const [showPopupAd, setShowPopupAd] = useState(false);
-  const [popupDismissable, setPopupDismissable] = useState(false);
   const bannerRotateRef = useRef<NodeJS.Timeout | null>(null);
 
   const [savedTimerState, setSavedTimerState] = useState<{time: number, phase: 'memorizing' | 'recalling' | 'idle'}>({time: 0, phase: 'idle'});
@@ -362,10 +360,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
   const showPopupAdBetweenLevels = () => {
     if (popupAds.length === 0) return;
+    // Rotate to next ad so each dialog shows a different ad
     setCurrentPopupIdx(i => (i + 1) % popupAds.length);
-    setPopupDismissable(false);
-    setShowPopupAd(true);
-    setTimeout(() => setPopupDismissable(true), 3000);
   };
 
   const handleSuccessNext = () => {
@@ -618,34 +614,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           );
         })()}
 
-        {/* ── Popup Ad overlay (400×300) ── */}
-        {showPopupAd && popupAds.length > 0 && (() => {
-          const ad = popupAds[currentPopupIdx];
-          return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-              <div className="bg-white rounded-2xl overflow-hidden shadow-2xl relative" style={{width:'min(400px,90vw)'}}>
-                <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
-                  <span className="text-xs text-gray-400">Advertisement</span>
-                  <button
-                    onClick={() => setShowPopupAd(false)}
-                    disabled={!popupDismissable}
-                    className={`text-xs px-2 py-1 rounded transition-all ${popupDismissable ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-200' : 'text-gray-300 cursor-not-allowed'}`}>
-                    {popupDismissable ? <X className="w-3.5 h-3.5" /> : 'Skip in 3s'}
-                  </button>
-                </div>
-                <a href={ad.click_url} target="_blank" rel="noopener noreferrer"
-                  className="block" style={{aspectRatio:'4/3'}}>
-                  {ad.media_type.startsWith('video') ? (
-                    <video src={ad.media_url} autoPlay muted loop playsInline
-                      className="w-full h-full object-cover" />
-                  ) : (
-                    <img src={ad.media_url} alt="Advertisement" className="w-full h-full object-cover" />
-                  )}
-                </a>
-              </div>
-            </div>
-          );
-        })()}
+
 
         <div className="flex-1 flex items-center justify-center">
           <GameGrid
@@ -730,19 +699,41 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
         {/* Success Popup */}
         <Dialog open={showSuccessPopup} onOpenChange={setShowSuccessPopup}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center justify-center gap-2 text-green-600">
-                <Trophy className="w-6 h-6" />
-                Correct!
-              </DialogTitle>
-            </DialogHeader>
-            <div className="text-center space-y-4">
-              <div className="text-3xl font-bold text-green-600">+{lastScore} Points</div>
-              <div className="text-muted-foreground">Accuracy: {Math.round(gameState.accuracy * 100)}%</div>
-              <Button onClick={handleSuccessNext} className="w-full bg-green-600 hover:bg-green-700 text-white">
-                Next Level
-              </Button>
+          <DialogContent className="sm:max-w-md p-0 overflow-visible bg-transparent border-none shadow-none">
+            <div className="flex flex-col items-center gap-3 w-full">
+              {/* Popup ad — above the dialog box */}
+              {popupAds.length > 0 && (() => {
+                const ad = popupAds[currentPopupIdx];
+                return (
+                  <div className="w-full rounded-xl overflow-hidden shadow-lg" style={{maxWidth:'400px'}}>
+                    <div className="flex items-center justify-between px-2 py-1 bg-gray-800/80 backdrop-blur-sm">
+                      <span className="text-xs text-gray-400">Advertisement</span>
+                    </div>
+                    <a href={ad.click_url} target="_blank" rel="noopener noreferrer"
+                      className="block" style={{aspectRatio:'4/3'}}>
+                      {ad.media_type.startsWith('video') ? (
+                        <video src={ad.media_url} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+                      ) : (
+                        <img src={ad.media_url} alt="Advertisement" className="w-full h-full object-cover" />
+                      )}
+                    </a>
+                  </div>
+                );
+              })()}
+              {/* Dialog box itself */}
+              <div className="bg-card rounded-xl shadow-2xl p-6 w-full" style={{maxWidth:'400px'}}>
+                <div className="flex items-center justify-center gap-2 text-green-600 mb-4">
+                  <Trophy className="w-6 h-6" />
+                  <span className="text-lg font-bold">Correct!</span>
+                </div>
+                <div className="text-center space-y-4">
+                  <div className="text-3xl font-bold text-green-600">+{lastScore} Points</div>
+                  <div className="text-muted-foreground">Accuracy: {Math.round(gameState.accuracy * 100)}%</div>
+                  <Button onClick={handleSuccessNext} className="w-full bg-green-600 hover:bg-green-700 text-white">
+                    Next Level
+                  </Button>
+                </div>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -773,30 +764,52 @@ export const GameScreen: React.FC<GameScreenProps> = ({
 
         {/* Failure Popup */}
         <Dialog open={showFailurePopup} onOpenChange={setShowFailurePopup}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center justify-center gap-2 text-red-600">
-                <AlertCircle className="w-6 h-6" />
-                Wrong Pattern!
-              </DialogTitle>
-            </DialogHeader>
-            <div className="text-center space-y-4">
-              <div className="text-lg text-muted-foreground">Accuracy: {Math.round(gameState.accuracy * 100)}%</div>
-              <div className="text-lg font-semibold">Lives remaining: {gameState.lives}</div>
-              <Button onClick={handleFailureTryAgain} className="w-full bg-red-600 hover:bg-red-700 text-white">
-                Try Again
-              </Button>
-            </div>
-            <div style={{ display: 'none' }}>
-              {!showFailurePopup && levelFailed && setTimeout(() => {
-                if (levelFailed && !showFailurePopup) {
-                  if (gameState.lives <= 0) {
-                    setGameState(prev => ({ ...prev, gameOver: true, isPlaying: false, showingFeedback: false }));
-                  } else {
-                    setShowRetryButton(true);
-                  }
-                }
-              }, 100)}
+          <DialogContent className="sm:max-w-md p-0 overflow-visible bg-transparent border-none shadow-none">
+            <div className="flex flex-col items-center gap-3 w-full">
+              {/* Popup ad — above the dialog box */}
+              {popupAds.length > 0 && (() => {
+                const ad = popupAds[currentPopupIdx];
+                return (
+                  <div className="w-full rounded-xl overflow-hidden shadow-lg" style={{maxWidth:'400px'}}>
+                    <div className="flex items-center justify-between px-2 py-1 bg-gray-800/80 backdrop-blur-sm">
+                      <span className="text-xs text-gray-400">Advertisement</span>
+                    </div>
+                    <a href={ad.click_url} target="_blank" rel="noopener noreferrer"
+                      className="block" style={{aspectRatio:'4/3'}}>
+                      {ad.media_type.startsWith('video') ? (
+                        <video src={ad.media_url} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+                      ) : (
+                        <img src={ad.media_url} alt="Advertisement" className="w-full h-full object-cover" />
+                      )}
+                    </a>
+                  </div>
+                );
+              })()}
+              {/* Dialog box itself */}
+              <div className="bg-card rounded-xl shadow-2xl p-6 w-full" style={{maxWidth:'400px'}}>
+                <div className="flex items-center justify-center gap-2 text-red-600 mb-4">
+                  <AlertCircle className="w-6 h-6" />
+                  <span className="text-lg font-bold">Wrong Pattern!</span>
+                </div>
+                <div className="text-center space-y-4">
+                  <div className="text-lg text-muted-foreground">Accuracy: {Math.round(gameState.accuracy * 100)}%</div>
+                  <div className="text-lg font-semibold">Lives remaining: {gameState.lives}</div>
+                  <Button onClick={handleFailureTryAgain} className="w-full bg-red-600 hover:bg-red-700 text-white">
+                    Try Again
+                  </Button>
+                </div>
+                <div style={{ display: 'none' }}>
+                  {!showFailurePopup && levelFailed && setTimeout(() => {
+                    if (levelFailed && !showFailurePopup) {
+                      if (gameState.lives <= 0) {
+                        setGameState(prev => ({ ...prev, gameOver: true, isPlaying: false, showingFeedback: false }));
+                      } else {
+                        setShowRetryButton(true);
+                      }
+                    }
+                  }, 100)}
+                </div>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
