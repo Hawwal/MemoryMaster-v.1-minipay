@@ -5,13 +5,56 @@ import {
   Shield, LogOut, Eye, Check, X, Trash2, Plus, Users,
   MessageSquare, Megaphone, RefreshCw, ExternalLink,
   AlertCircle, CheckCircle2, Clock, Calendar, Loader2,
-  ChevronDown, ChevronUp, Video, Upload, Link, ImageIcon, PenLine, Wallet
+  ChevronDown, ChevronUp, Video, Upload, Link, ImageIcon, PenLine, Wallet, BarChart2, TrendingUp, Activity
 } from 'lucide-react';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
+
+// ── Dune Analytics ───────────────────────────────────────────────────────────
+const DUNE_API_KEY = 'iZj8KqoWB80zBXuqBs7Y5jBp73mg7dXz';
+const DUNE_QUERY_IDS = {
+  activePlayers:  7550595,
+  adRevenue:      7550611,
+  totals:         7550685,
+  topPlayers:     7550701,
+};
+
+interface DuneRow { [key: string]: any; }
+interface DuneResult { rows: DuneRow[]; status: 'loading' | 'done' | 'error'; error?: string; }
+
+async function fetchDuneQuery(queryId: number): Promise<DuneRow[]> {
+  // Trigger execution
+  const execRes = await fetch(`https://api.dune.com/api/v1/query/${queryId}/execute`, {
+    method: 'POST',
+    headers: { 'X-DUNE-API-KEY': DUNE_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ performance: 'medium' }),
+  });
+  const execData = await execRes.json();
+  const executionId = execData.execution_id;
+  if (!executionId) throw new Error('No execution ID returned');
+
+  // Poll until done (max 60s)
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const statusRes = await fetch(`https://api.dune.com/api/v1/execution/${executionId}/status`, {
+      headers: { 'X-DUNE-API-KEY': DUNE_API_KEY },
+    });
+    const statusData = await statusRes.json();
+    if (statusData.state === 'QUERY_STATE_COMPLETED') {
+      const resultsRes = await fetch(`https://api.dune.com/api/v1/execution/${executionId}/results`, {
+        headers: { 'X-DUNE-API-KEY': DUNE_API_KEY },
+      });
+      const resultsData = await resultsRes.json();
+      return resultsData.result?.rows || [];
+    }
+    if (statusData.state === 'QUERY_STATE_FAILED') throw new Error('Query execution failed');
+  }
+  throw new Error('Query timed out');
+}
+
 
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -20,7 +63,7 @@ async function hashPassword(password: string): Promise<string> {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-type Tab = 'ads' | 'consultations' | 'admins';
+type Tab = 'ads' | 'consultations' | 'admins' | 'analytics';
 type AdStatus = 'pending' | 'approved' | 'rejected' | 'expired';
 
 interface Ad {
@@ -61,6 +104,202 @@ interface Admin {
 }
 
 const AD_TIERS = ['basic', 'standard', 'premium', 'enterprise'];
+
+
+// ── Dune Analytics Tab Component ─────────────────────────────────────────────
+const DuneAnalyticsTab: React.FC = () => {
+  const [totals, setTotals] = useState<DuneResult>({ rows: [], status: 'loading' });
+  const [activePlayers, setActivePlayers] = useState<DuneResult>({ rows: [], status: 'loading' });
+  const [adRevenue, setAdRevenue] = useState<DuneResult>({ rows: [], status: 'loading' });
+  const [topPlayers, setTopPlayers] = useState<DuneResult>({ rows: [], status: 'loading' });
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadAll = async () => {
+    setIsRefreshing(true);
+    setTotals({ rows: [], status: 'loading' });
+    setActivePlayers({ rows: [], status: 'loading' });
+    setAdRevenue({ rows: [], status: 'loading' });
+    setTopPlayers({ rows: [], status: 'loading' });
+    await Promise.all([
+      fetchDuneQuery(DUNE_QUERY_IDS.totals)
+        .then(rows => setTotals({ rows, status: 'done' }))
+        .catch(e => setTotals({ rows: [], status: 'error', error: e.message })),
+      fetchDuneQuery(DUNE_QUERY_IDS.activePlayers)
+        .then(rows => setActivePlayers({ rows, status: 'done' }))
+        .catch(e => setActivePlayers({ rows: [], status: 'error', error: e.message })),
+      fetchDuneQuery(DUNE_QUERY_IDS.adRevenue)
+        .then(rows => setAdRevenue({ rows, status: 'done' }))
+        .catch(e => setAdRevenue({ rows: [], status: 'error', error: e.message })),
+      fetchDuneQuery(DUNE_QUERY_IDS.topPlayers)
+        .then(rows => setTopPlayers({ rows, status: 'done' }))
+        .catch(e => setTopPlayers({ rows: [], status: 'error', error: e.message })),
+    ]);
+    setLastRefresh(new Date());
+    setIsRefreshing(false);
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  const totalRow = totals.rows[0] || {};
+
+  const StatCard = ({ label, value, icon, color, sublabel }: {
+    label: string; value: string | number; icon: React.ReactNode; color: string; sublabel?: string;
+  }) => (
+    <div className={"rounded-2xl p-4 border space-y-1 " + color}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
+        <div className="opacity-60">{icon}</div>
+      </div>
+      <p className="text-2xl font-bold text-white">
+        {totals.status === 'loading'
+          ? <span className="inline-block w-16 h-6 bg-gray-700 rounded animate-pulse" />
+          : value}
+      </p>
+      {sublabel && <p className="text-xs text-gray-500">{sublabel}</p>}
+    </div>
+  );
+
+  const MiniBarChart = ({ rows, xKey, yKey, color }: {
+    rows: DuneRow[]; xKey: string; yKey: string; color: string;
+  }) => {
+    if (!rows.length) return <div className="flex items-center justify-center h-24 text-gray-600 text-xs">No data yet</div>;
+    const max = Math.max(...rows.map(r => Number(r[yKey]) || 0));
+    const sorted = [...rows].sort((a, b) => new Date(a[xKey]).getTime() - new Date(b[xKey]).getTime()).slice(-14);
+    return (
+      <div className="flex items-end gap-1 h-24 w-full">
+        {sorted.map((row, i) => {
+          const val = Number(row[yKey]) || 0;
+          const pct = max > 0 ? (val / max) * 100 : 0;
+          const label = new Date(row[xKey]).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5 group relative">
+              <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 pointer-events-none">
+                {label}: {val}
+              </div>
+              <div className={"w-full rounded-t transition-all " + color} style={{ height: Math.max(pct, 4) + "%" }} />
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6 pb-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <BarChart2 className="w-5 h-5 text-indigo-400" /> On-Chain Analytics
+          </h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Powered by Dune Analytics · CELO Mainnet ·{" "}
+            {lastRefresh ? "Last updated " + lastRefresh.toLocaleTimeString() : "Loading…"}
+          </p>
+        </div>
+        <button onClick={loadAll} disabled={isRefreshing}
+          className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-xl text-xs font-semibold transition-all">
+          <RefreshCw className={"w-3.5 h-3.5 " + (isRefreshing ? "animate-spin" : "")} />
+          {isRefreshing ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard label="Unique Players" value={totalRow.total_unique_players ?? "—"}
+          icon={<Users className="w-4 h-4 text-indigo-400" />}
+          color="bg-indigo-950/40 border-indigo-800" sublabel="All time on-chain" />
+        <StatCard label="Total Transactions" value={totalRow.total_transactions ?? "—"}
+          icon={<Activity className="w-4 h-4 text-purple-400" />}
+          color="bg-purple-950/40 border-purple-800" sublabel="Game interactions" />
+        <StatCard label="Ad Payments" value={totalRow.total_ad_payments ?? "—"}
+          icon={<Megaphone className="w-4 h-4 text-pink-400" />}
+          color="bg-pink-950/40 border-pink-800" sublabel="USDT transactions" />
+        <StatCard
+          label="USDT Earned"
+          value={totals.status === "done" ? "$" + Number(totalRow.total_usdt_earned || 0).toFixed(2) : "—"}
+          icon={<TrendingUp className="w-4 h-4 text-green-400" />}
+          color="bg-green-950/40 border-green-800" sublabel="From ad sales" />
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-white flex items-center gap-2">
+            <Users className="w-4 h-4 text-indigo-400" /> Active Players (Last 90 Days)
+          </p>
+          {activePlayers.status === "error" && <span className="text-xs text-red-400">{activePlayers.error}</span>}
+        </div>
+        {activePlayers.status === "loading"
+          ? <div className="h-24 bg-gray-800 rounded-xl animate-pulse" />
+          : <MiniBarChart rows={activePlayers.rows} xKey="day" yKey="active_players" color="bg-indigo-500" />}
+        <div className="flex gap-4 text-xs text-gray-500 pt-1">
+          <span>Unique: <span className="text-white font-semibold">{activePlayers.rows.reduce((s, r) => s + (Number(r.active_players) || 0), 0)}</span></span>
+          <span>Interactions: <span className="text-white font-semibold">{activePlayers.rows.reduce((s, r) => s + (Number(r.total_signatures) || 0), 0)}</span></span>
+        </div>
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-white flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-green-400" /> Ad Revenue — USDT (Last 90 Days)
+          </p>
+          {adRevenue.status === "error" && <span className="text-xs text-red-400">{adRevenue.error}</span>}
+        </div>
+        {adRevenue.status === "loading"
+          ? <div className="h-24 bg-gray-800 rounded-xl animate-pulse" />
+          : <MiniBarChart rows={adRevenue.rows} xKey="day" yKey="usdt_total" color="bg-green-500" />}
+        <div className="flex gap-4 text-xs text-gray-500 pt-1">
+          <span>Payments: <span className="text-white font-semibold">{adRevenue.rows.reduce((s, r) => s + (Number(r.total_payments) || 0), 0)}</span></span>
+          <span>Total USDT: <span className="text-white font-semibold">${adRevenue.rows.reduce((s, r) => s + (Number(r.usdt_total) || 0), 0).toFixed(2)}</span></span>
+        </div>
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 space-y-3">
+        <p className="text-sm font-semibold text-white flex items-center gap-2">
+          <Trophy className="w-4 h-4 text-yellow-400" /> Most Active Wallets (Last 90 Days)
+        </p>
+        {topPlayers.status === "loading" ? (
+          <div className="space-y-2">{[1,2,3,4,5].map(i => <div key={i} className="h-10 bg-gray-800 rounded-xl animate-pulse" />)}</div>
+        ) : topPlayers.status === "error" ? (
+          <p className="text-xs text-red-400">{topPlayers.error}</p>
+        ) : topPlayers.rows.length === 0 ? (
+          <p className="text-xs text-gray-500 text-center py-4">No data yet</p>
+        ) : (
+          <div className="space-y-2">
+            {topPlayers.rows.map((row, i) => (
+              <div key={i} className="flex items-center gap-3 bg-gray-800/60 rounded-xl px-3 py-2">
+                <span className="text-xs font-bold text-gray-500 w-5 shrink-0">#{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-mono text-gray-300 truncate">
+                    {String(row.wallet).slice(0, 8)}…{String(row.wallet).slice(-6)}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    First: {new Date(row.first_seen).toLocaleDateString()} · Last: {new Date(row.last_seen).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-bold text-indigo-400">{row.interactions}</p>
+                  <p className="text-xs text-gray-600">interactions</p>
+                </div>
+                <a href={"https://celoscan.io/address/" + row.wallet} target="_blank" rel="noopener noreferrer"
+                  className="text-gray-600 hover:text-indigo-400 transition-colors shrink-0">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-center gap-2 text-xs text-gray-600">
+        <span>Data sourced from</span>
+        <a href="https://dune.com" target="_blank" rel="noopener noreferrer"
+          className="text-indigo-500 hover:text-indigo-400 flex items-center gap-1 transition-colors">
+          Dune Analytics <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
+    </div>
+  );
+};
 
 export const AdminPage: React.FC = () => {
   const navigate = useNavigate();
@@ -558,6 +797,7 @@ export const AdminPage: React.FC = () => {
             { key: 'ads', label: 'Ads', icon: Megaphone, badge: pendingCount },
             { key: 'consultations', label: 'Consultations', icon: MessageSquare, badge: unreadCount },
             { key: 'admins', label: 'Admins', icon: Users, badge: 0 },
+            { key: 'analytics', label: 'Analytics', icon: BarChart2, badge: 0 },
           ] as const).map(({ key, label, icon: Icon, badge }) => (
             <button key={key} onClick={() => setActiveTab(key)}
               className={`relative flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
@@ -1000,6 +1240,10 @@ export const AdminPage: React.FC = () => {
         )}
 
         {/* ── ADMINS ── */}
+        {activeTab === 'analytics' && (
+          <DuneAnalyticsTab />
+        )}
+
         {activeTab === 'admins' && (
           <>
             <div className="bg-gray-900 rounded-2xl border border-gray-800 p-4">
