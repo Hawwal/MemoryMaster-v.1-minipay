@@ -1,6 +1,5 @@
-import React from 'react';
-import { ArrowLeft, Brain, Grid3X3, Lock, ShoppingCart, Users, Route, Blocks, Network } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React, { useEffect, useState } from 'react';
+import { ChevronLeft, Lock, Settings } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { SavedGameState } from '@/App';
 
@@ -8,128 +7,187 @@ interface GameSelectScreenProps {
   onBack: () => void;
   onSelectMemoryGame: () => void;
   onSelectDualNBack: () => void;
+  onOpenSettings: () => void;
+  onNotifyRequest: () => void;
+  initialTab: 'available' | 'coming';
   savedGameState: SavedGameState | null;
 }
 
-const comingSoonGames = [
-  { name: 'Pattern Recall', icon: Blocks },
-  { name: 'Infinite Grid Match', icon: Grid3X3 },
-  { name: 'Head Count', icon: Users },
-  { name: 'Chasing Trails', icon: Route },
-  { name: 'Word Association Matrix', icon: Network },
-  { name: 'The Grocery Run', icon: ShoppingCart },
+type GameMode = {
+  id: 'memory-master' | 'letter-grid';
+  name: string;
+  description: string;
+  status: 'available' | 'new';
+  color: string;
+  lightBg: string;
+  icon: string;
+  onSelect: () => void;
+};
+
+const comingSoon = [
+  { name: 'Pattern Recall', icon: '▦', color: '#3BB589' },
+  { name: 'Infinite Grid Match', icon: '∞', color: '#F5C842' },
+  { name: 'Head Count', icon: '123', color: '#F06B3F' },
+  { name: 'Chasing Trails', icon: '↝', color: '#7C3AED' },
+  { name: 'Word Association Matrix', icon: 'Aa', color: '#5B9BD6' },
+  { name: 'The Grocery Run', icon: '🛒', color: '#3BB589' },
 ];
+
+function GalleryDoodles() {
+  return (
+    <svg aria-hidden="true" className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 844" preserveAspectRatio="none">
+      <g opacity="0.07">
+        <text x="8" y="104" fontSize="38" fill="#2D1B69" fontFamily="sans-serif">*</text>
+        <text x="356" y="152" fontSize="26" fill="#F06B3F" fontFamily="sans-serif">+</text>
+        <text x="18" y="304" fontSize="30" fill="#3BB589" fontFamily="sans-serif">*</text>
+        <text x="362" y="354" fontSize="22" fill="#F5C842" fontFamily="sans-serif">*</text>
+        <text x="4" y="504" fontSize="26" fill="#5B9BD6" fontFamily="sans-serif">+</text>
+        <text x="356" y="582" fontSize="32" fill="#2D1B69" fontFamily="sans-serif">*</text>
+        <text x="14" y="704" fontSize="24" fill="#F06B3F" fontFamily="sans-serif">*</text>
+        <text x="352" y="754" fontSize="20" fill="#3BB589" fontFamily="sans-serif">+</text>
+        <circle cx="378" cy="254" r="28" fill="none" stroke="#7C3AED" strokeWidth="2.5" />
+        <circle cx="12" cy="454" r="22" fill="none" stroke="#F06B3F" strokeWidth="2.5" />
+        <rect x="360" y="454" width="20" height="20" rx="4" fill="none" stroke="#F5C842" strokeWidth="2.5" transform="rotate(20 370 464)" />
+        <rect x="4" y="604" width="17" height="17" rx="3" fill="none" stroke="#3BB589" strokeWidth="2.5" transform="rotate(-15 12 612)" />
+      </g>
+    </svg>
+  );
+}
 
 export const GameSelectScreen: React.FC<GameSelectScreenProps> = ({
   onBack,
   onSelectMemoryGame,
   onSelectDualNBack,
+  onOpenSettings,
+  onNotifyRequest,
+  initialTab,
   savedGameState,
 }) => {
   const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState<'available' | 'coming'>(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  const gameModes: GameMode[] = [
+    {
+      id: 'memory-master',
+      name: 'Memory Master',
+      description: 'Memorize Tetris-like shapes, recreate them on the grid, and climb the leaderboard.',
+      status: 'available',
+      color: '#F06B3F',
+      lightBg: '#FFF3EE',
+      icon: '▦',
+      onSelect: onSelectMemoryGame,
+    },
+    {
+      id: 'letter-grid',
+      name: 'Letter Grid',
+      description: "Learn fixed letter-to-grid pairs, then recall each letter's box under pressure.",
+      status: 'new',
+      color: '#5B9BD6',
+      lightBg: '#EEF5FF',
+      icon: 'Aa',
+      onSelect: onSelectDualNBack,
+    },
+  ];
 
   return (
-    <div className={isMobile ? 'mobile-game-container bg-gradient-to-br from-blue-50 to-indigo-50 p-4 overflow-y-auto' : 'game-container bg-gradient-to-br from-blue-50 to-indigo-50 p-4 overflow-y-auto'}>
-      <div className="min-h-full flex flex-col">
-        <div className="flex items-center justify-between mb-5">
-          <Button
-            onClick={onBack}
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back
-          </Button>
-          <img
-            src="/logo/memory-master-logo.png"
-            alt="Memory Master"
-            className="w-28 h-auto object-contain"
-            style={{ imageRendering: 'pixelated' }}
-          />
-        </div>
+    <div className={isMobile ? 'memory-new-shell' : 'memory-new-shell memory-new-shell-desktop'}>
+      <main className="memory-gallery-new">
+        <GalleryDoodles />
 
-        <div className="text-center mb-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-game-primary mb-1">
-            Choose your training mode
-          </p>
-          <h1 className="text-2xl font-bold text-foreground">Brain Games</h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            Pick a challenge for memory, attention, and fast pattern recognition.
-          </p>
-        </div>
+        <header className="memory-gallery-header">
+          <button onClick={onBack} className="memory-gallery-icon-button" aria-label="Back to splash">
+            <ChevronLeft size={20} />
+          </button>
+          <img src="/new-ui/memory-master-logo.png" alt="Memory Master" className="memory-gallery-logo" />
+          <button onClick={onOpenSettings} className="memory-gallery-icon-button" aria-label="Player settings">
+            <Settings size={18} />
+          </button>
+        </header>
 
-        <div className="space-y-3">
-          <button
-            onClick={onSelectMemoryGame}
-            className="w-full text-left bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg p-4 border border-white hover:border-game-primary/30 transition-colors"
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-11 h-11 rounded-xl bg-game-primary/10 flex items-center justify-center shrink-0">
-                <Grid3X3 className="w-5 h-5 text-game-primary" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-bold text-foreground">Memory Master</h2>
-                  <span className="text-[10px] font-bold uppercase text-green-700 bg-green-100 px-2 py-1 rounded-full">
-                    Available
+        <section className="memory-gallery-title">
+          <p>Choose Your Training Mode</p>
+          <h1>Brain Games</h1>
+          <span>Pick a challenge for memory, attention, and fast pattern recognition.</span>
+        </section>
+
+        <nav className="memory-gallery-tabs" aria-label="Game categories">
+          <button className={activeTab === 'available' ? 'active' : ''} onClick={() => setActiveTab('available')}>
+            🎮 Available
+          </button>
+          <button className={activeTab === 'coming' ? 'active' : ''} onClick={() => setActiveTab('coming')}>
+            🔒 Coming Soon
+          </button>
+        </nav>
+
+        <section className="memory-gallery-scroll">
+          {activeTab === 'available' && (
+            <div className="memory-gallery-list">
+              {gameModes.map(mode => (
+                <button
+                  key={mode.id}
+                  onClick={mode.onSelect}
+                  className="memory-game-card-new"
+                  style={{ borderColor: `${mode.color}28` }}
+                >
+                  <span className="memory-game-card-icon" style={{ backgroundColor: mode.lightBg, borderColor: `${mode.color}35` }}>
+                    {mode.icon}
                   </span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Memorize Tetris-like shapes, recreate them on the grid, and climb the leaderboard.
-                </p>
-                {savedGameState && (
-                  <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mt-3">
-                    Resume: Level {savedGameState.level} · {savedGameState.score.toLocaleString()} pts · {savedGameState.lives} {savedGameState.lives === 1 ? 'life' : 'lives'}
-                  </p>
-                )}
+                  <span className="memory-game-card-copy">
+                    <span className="memory-game-card-title-row">
+                      <strong>{mode.name}</strong>
+                      <em style={{ backgroundColor: mode.status === 'available' ? '#3BB589' : mode.color }}>
+                        {mode.status === 'available' ? 'AVAILABLE' : 'NEW'}
+                      </em>
+                    </span>
+                    <small>{mode.description}</small>
+                    {mode.id === 'memory-master' && savedGameState && (
+                      <small className="memory-game-card-resume">
+                        Resume: Level {savedGameState.level} - {savedGameState.score.toLocaleString()} pts - {savedGameState.lives} {savedGameState.lives === 1 ? 'life' : 'lives'}
+                      </small>
+                    )}
+                  </span>
+                  <span className="memory-game-card-arrow" style={{ color: mode.color }}>›</span>
+                </button>
+              ))}
+
+              <div className="memory-gallery-note">
+                <span>🏆</span>
+                <p>More games unlocking soon — keep training, champion!</p>
               </div>
             </div>
-          </button>
+          )}
 
-          <button
-            onClick={onSelectDualNBack}
-            className="w-full text-left bg-slate-950 text-white rounded-2xl shadow-lg p-4 border border-cyan-300/30 hover:border-cyan-300/70 transition-colors"
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-11 h-11 rounded-xl bg-cyan-300/10 flex items-center justify-center shrink-0">
-                <Brain className="w-5 h-5 text-cyan-300" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-bold">Letter Grid</h2>
-                  <span className="text-[10px] font-bold uppercase text-cyan-950 bg-cyan-300 px-2 py-1 rounded-full">
-                    New
-                  </span>
-                </div>
-                <p className="text-xs text-cyan-50/70 mt-1">
-                  Learn fixed letter-to-grid pairs, then recall each letter's box under pressure.
-                </p>
-              </div>
-            </div>
-          </button>
-        </div>
-
-        <div className="mt-5">
-          <h2 className="text-sm font-bold text-foreground mb-3">Coming Soon</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {comingSoonGames.map(({ name, icon: Icon }) => (
-              <div key={name} className="bg-white/75 rounded-xl border border-white p-3 min-h-[98px] flex flex-col justify-between">
-                <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-                    <Icon className="w-4 h-4 text-game-secondary" />
+          {activeTab === 'coming' && (
+            <div className="memory-coming-panel">
+              <p className="memory-coming-intro">These games are in the lab — stay tuned!</p>
+              <div className="memory-coming-grid">
+                {comingSoon.map(game => (
+                  <div key={game.name} className="memory-coming-card" style={{ borderColor: `${game.color}45` }}>
+                    <div className="memory-coming-icon-wrap">
+                      <span style={{ backgroundColor: `${game.color}18` }}>{game.icon}</span>
+                      <i><Lock size={11} /></i>
+                    </div>
+                    <strong>{game.name}</strong>
+                    <small>Coming soon</small>
                   </div>
-                  <Lock className="w-4 h-4 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-foreground leading-tight">{name}</p>
-                  <p className="text-[10px] text-muted-foreground mt-1">Coming soon</p>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
+
+              <button onClick={onNotifyRequest} className="memory-notify-card">
+                <span>🔔</span>
+                <span>
+                  <strong>Get notified first!</strong>
+                  <small>New games drop every month. Play daily to unlock early access.</small>
+                </span>
+              </button>
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 };

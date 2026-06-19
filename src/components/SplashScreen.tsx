@@ -1,109 +1,96 @@
 import React from 'react';
-import { Play, Grid, Target, Trophy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Brain, Settings, Trophy } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { SavedGameState } from '@/App';
 
 interface SplashScreenProps {
-  onStartGame: () => void;
+  onStartGame: (initialTab?: 'available' | 'coming') => void;
+  onOpenSettings: () => void;
   savedGameState: SavedGameState | null;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ onStartGame, savedGameState }) => {
+function SplashDoodles() {
+  return (
+    <svg aria-hidden="true" className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 844" preserveAspectRatio="none">
+      <g opacity="0.35">
+        <text x="16" y="58" fontSize="24" fill="#F5C842" fontFamily="sans-serif">*</text>
+        <text x="344" y="44" fontSize="16" fill="#3BB589" fontFamily="sans-serif">*</text>
+        <text x="198" y="28" fontSize="11" fill="white" fontFamily="sans-serif">*</text>
+        <text x="128" y="72" fontSize="9" fill="#F06B3F" fontFamily="sans-serif">+</text>
+        <text x="262" y="82" fontSize="11" fill="#F5C842" fontFamily="sans-serif">+</text>
+        <text x="360" y="116" fontSize="9" fill="white" fontFamily="sans-serif">*</text>
+        <text x="14" y="205" fontSize="13" fill="#F5C842" fontFamily="sans-serif">*</text>
+        <text x="370" y="235" fontSize="17" fill="#3BB589" fontFamily="sans-serif">*</text>
+        <text x="8" y="355" fontSize="11" fill="white" fontFamily="sans-serif">+</text>
+        <text x="368" y="408" fontSize="13" fill="#F5C842" fontFamily="sans-serif">*</text>
+        <text x="24" y="658" fontSize="15" fill="#3BB589" fontFamily="sans-serif">*</text>
+        <text x="354" y="604" fontSize="11" fill="white" fontFamily="sans-serif">*</text>
+        <text x="178" y="725" fontSize="9" fill="#F06B3F" fontFamily="sans-serif">+</text>
+        <text x="78" y="784" fontSize="13" fill="#F5C842" fontFamily="sans-serif">*</text>
+        <text x="304" y="764" fontSize="11" fill="white" fontFamily="sans-serif">*</text>
+      </g>
+      <g opacity="0.45">
+        <rect x="20" y="132" width="13" height="13" rx="3" fill="#F06B3F" />
+        <rect x="358" y="162" width="11" height="11" rx="2" fill="#3BB589" />
+        <rect x="342" y="682" width="15" height="15" rx="3" fill="#F5C842" />
+        <rect x="16" y="704" width="11" height="11" rx="2" fill="#5B9BD6" />
+        <rect x="372" y="744" width="9" height="9" rx="2" fill="#F06B3F" />
+        <rect x="186" y="60" width="8" height="8" rx="2" fill="#F5C842" transform="rotate(20 190 64)" />
+        <rect x="340" y="560" width="10" height="10" rx="2" fill="#F06B3F" transform="rotate(-15 345 565)" />
+      </g>
+      <g opacity="0.18">
+        <circle cx="368" cy="308" r="22" fill="none" stroke="white" strokeWidth="2.5" />
+        <circle cx="18" cy="456" r="16" fill="none" stroke="#F5C842" strokeWidth="2.5" />
+        <circle cx="376" cy="556" r="13" fill="none" stroke="#3BB589" strokeWidth="2.5" />
+        <circle cx="20" cy="168" r="10" fill="none" stroke="#5B9BD6" strokeWidth="2" />
+      </g>
+    </svg>
+  );
+}
+
+export const SplashScreen: React.FC<SplashScreenProps> = ({ onStartGame, onOpenSettings }) => {
   const isMobile = useIsMobile();
 
-  const hasResume = savedGameState !== null;
-  const buttonLabel = hasResume ? 'Resume Game' : 'Begin Challenge';
-
   return (
-    <div className={isMobile ? "mobile-game-container bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4" : "game-container bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4"}>
-      <div className="w-full h-full flex items-center justify-center">
-        {/* Background Game Elements */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {Array.from({ length: 20 }).map((_, i) => (
-            <div
-              key={i}
-              className="absolute w-16 h-16 border-2 border-game-primary/20 rounded-lg opacity-30"
-              style={{
-                top: `${Math.random() * 100}%`,
-                left: `${Math.random() * 100}%`,
-                transform: `rotate(${Math.random() * 45}deg)`,
-                animation: `pulse ${3 + Math.random() * 2}s infinite`
-              }}
-            />
-          ))}
-        </div>
+    <div className={isMobile ? 'memory-new-shell' : 'memory-new-shell memory-new-shell-desktop'}>
+      <main className="memory-splash-new">
+        <SplashDoodles />
 
-        <div className="relative z-10 bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-xs mx-auto">
-          <div className="text-center mb-6">
-            <div className="flex items-center justify-center mb-6">
-              <img
-                src="/logo/memory-master-logo.png"
-                alt="Memory Master"
-                className="w-full max-w-[280px] h-auto object-contain"
-                style={{ imageRendering: 'pixelated' }}
-              />
-            </div>
+        <button onClick={onOpenSettings} className="memory-splash-settings" aria-label="Player settings">
+          <Settings size={18} />
+        </button>
 
-            <p className="text-sm text-muted-foreground mb-4 px-2">
-              Sharpen your memory—memorize, recreate, and conquer the leaderboard!
-            </p>
+        <img src="/new-ui/memory-master-logo.png" alt="Memory Master" className="memory-splash-logo" />
+        <img src="/new-ui/memory-mountain.png" alt="Memory Master mountain" className="memory-splash-mountain" />
+
+        <p className="memory-splash-tagline">Train your brain. Master your memory.</p>
+
+        <section className="memory-splash-badges" aria-label="Game highlights">
+          <div>
+            <span style={{ backgroundColor: 'rgba(245, 200, 66, 0.15)' }}>
+              <Brain size={20} color="#F5C842" />
+            </span>
+            <strong>Memory<br />Test</strong>
           </div>
-
-          {/* Resume banner — shown only when player has a saved mid-game session */}
-          {hasResume && (
-            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
-              <p className="text-sm font-semibold text-amber-700 mb-1">Game in Progress</p>
-              <p className="text-xs text-amber-600">
-                Level {savedGameState!.level} · {savedGameState!.score.toLocaleString()} pts · {savedGameState!.lives} {savedGameState!.lives === 1 ? 'life' : 'lives'} left
-              </p>
-            </div>
-          )}
-
-          {/* Feature Highlights */}
-          <div className="grid grid-cols-1 gap-3 mb-6">
-            <div className="text-center p-3 bg-muted/50 rounded-lg">
-              <Target className="w-6 h-6 text-game-primary mx-auto mb-2" />
-              <h3 className="font-semibold text-sm mb-1">Memory Test</h3>
-              <p className="text-xs text-muted-foreground">
-                Memorize complex shapes in limited time
-              </p>
-            </div>
-
-            <div className="text-center p-3 bg-muted/50 rounded-lg">
-              <Grid className="w-6 h-6 text-game-secondary mx-auto mb-2" />
-              <h3 className="font-semibold text-sm mb-1">8×8 Grid</h3>
-              <p className="text-xs text-muted-foreground">
-                Precision gameplay on a classic grid
-              </p>
-            </div>
-
-            <div className="text-center p-3 bg-muted/50 rounded-lg">
-              <Trophy className="w-6 h-6 text-game-warning mx-auto mb-2" />
-              <h3 className="font-semibold text-sm mb-1">Leaderboard</h3>
-              <p className="text-xs text-muted-foreground">
-                Compete with players worldwide
-              </p>
-            </div>
+          <div>
+            <span style={{ backgroundColor: 'rgba(91, 155, 214, 0.15)' }}>
+              <Trophy size={20} color="#5B9BD6" />
+            </span>
+            <strong>Leader-<br />board</strong>
           </div>
+        </section>
 
-          {/* Action Button */}
-          <div className="text-center">
-            <Button
-              onClick={onStartGame}
-              size="lg"
-              className="bg-gradient-to-r from-game-primary to-game-secondary hover:from-game-primary/90 hover:to-game-secondary/90 text-white px-6 py-4 text-base font-semibold rounded-xl transition-all transform hover:scale-105 w-full"
-            >
-              <Play className="w-4 h-4 mr-2" />
-              {buttonLabel}
-            </Button>
+        <button onClick={() => onStartGame('available')} className="memory-splash-play">
+          <span>▶</span>
+          Play Now
+        </button>
 
-            <p className="text-xs text-muted-foreground mt-3">
-              Built by Hawwal on Celo
-            </p>
-          </div>
-        </div>
-      </div>
+        <button onClick={() => onStartGame('coming')} className="memory-splash-link">
+          View all game modes -&gt;
+        </button>
+
+        <p className="memory-splash-footer">Built by Hawwal on Celo</p>
+      </main>
     </div>
   );
 };

@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800;900&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -835,5 +836,504 @@
     margin: 4px 0 0;
     color: rgba(255, 255, 255, 0.78);
     font-size: 12px;
+  }
+}
+
+
+@layer components {
+  .memory-new-shell {
+    width: min(100vw, 390px);
+    height: min(100dvh, 844px);
+    min-height: 640px;
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1A0F3A 0%, #2D1B69 50%, #1A0F3A 100%);
+    font-family: 'Nunito', system-ui, sans-serif;
+  }
+
+  .memory-new-shell-desktop {
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+  }
+
+  .memory-splash-new,
+  .memory-gallery-new {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .memory-splash-new {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: radial-gradient(ellipse at 50% 35%, #4A2C8F 0%, #2D1B69 55%, #1A0F3A 100%);
+    color: #fff;
+  }
+
+  .memory-splash-settings {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 2;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.72);
+    display: grid;
+    place-items: center;
+  }
+
+  .memory-splash-logo {
+    position: relative;
+    z-index: 1;
+    width: min(72%, 280px);
+    margin-top: clamp(28px, 7dvh, 56px);
+    object-fit: contain;
+  }
+
+  .memory-splash-mountain {
+    position: relative;
+    z-index: 1;
+    width: min(82%, 320px);
+    margin-top: -8px;
+    object-fit: contain;
+    filter: drop-shadow(0 18px 22px rgba(0, 0, 0, 0.28));
+  }
+
+  .memory-splash-tagline {
+    position: relative;
+    z-index: 1;
+    margin: -6px 0 0;
+    padding: 0 32px;
+    color: rgba(255, 255, 255, 0.9);
+    text-align: center;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .memory-splash-badges {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    width: 100%;
+    margin-top: clamp(18px, 3dvh, 28px);
+    padding: 0 28px;
+  }
+
+  .memory-splash-badges div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 86px;
+  }
+
+  .memory-splash-badges span {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.14);
+  }
+
+  .memory-splash-badges strong {
+    color: rgba(255, 255, 255, 0.76);
+    text-align: center;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.08;
+  }
+
+  .memory-splash-play {
+    position: relative;
+    z-index: 1;
+    width: calc(100% - 64px);
+    min-height: 58px;
+    margin-top: clamp(22px, 4dvh, 34px);
+    border: 0;
+    border-radius: 24px;
+    background: linear-gradient(135deg, #F06B3F 0%, #E8480F 100%);
+    color: white;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0;
+    box-shadow: 0 6px 24px rgba(240, 107, 63, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .memory-splash-play:active,
+  .memory-game-card-new:active,
+  .memory-notify-card:active {
+    transform: scale(0.97);
+  }
+
+  .memory-splash-play span {
+    font-size: 24px;
+  }
+
+  .memory-splash-link {
+    position: relative;
+    z-index: 1;
+    margin-top: 12px;
+    border: 0;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .memory-splash-footer {
+    position: relative;
+    z-index: 1;
+    margin: auto 0 16px;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 12px;
+  }
+
+  .memory-gallery-new {
+    display: flex;
+    flex-direction: column;
+    background: #FFFBF5;
+    color: #1A0F3A;
+  }
+
+  .memory-gallery-header {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 20px 8px;
+  }
+
+  .memory-gallery-icon-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    border: 2px solid rgba(26, 15, 58, 0.1);
+    background: #fff;
+    color: #1A0F3A;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 2px 8px rgba(26, 15, 58, 0.06);
+  }
+
+  .memory-gallery-logo {
+    height: 36px;
+    width: auto;
+    object-fit: contain;
+  }
+
+  .memory-gallery-title {
+    position: relative;
+    z-index: 1;
+    padding: 14px 24px 4px;
+  }
+
+  .memory-gallery-title p {
+    margin: 0;
+    color: #3BB589;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .memory-gallery-title h1 {
+    margin: 2px 0 0;
+    color: #1A0F3A;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  .memory-gallery-title span {
+    display: block;
+    margin-top: 4px;
+    color: #6B5E8A;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .memory-gallery-tabs {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 8px;
+    padding: 0 24px;
+    margin-top: 16px;
+  }
+
+  .memory-gallery-tabs button {
+    border: 2px solid #E5DDD5;
+    border-radius: 999px;
+    background: #fff;
+    color: #6B5E8A;
+    padding: 7px 16px;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .memory-gallery-tabs button.active {
+    border-color: #1A0F3A;
+    background: #1A0F3A;
+    color: #fff;
+  }
+
+  .memory-gallery-scroll {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px 24px;
+    scrollbar-width: none;
+  }
+
+  .memory-gallery-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .memory-gallery-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .memory-game-card-new {
+    width: 100%;
+    border: 2px solid;
+    border-radius: 28px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    text-align: left;
+    box-shadow: 0 8px 18px rgba(26, 15, 58, 0.06);
+    transition: transform 140ms ease;
+  }
+
+  .memory-game-card-icon {
+    width: 64px;
+    height: 64px;
+    border: 4px solid;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    color: #1A0F3A;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+  }
+
+  .memory-game-card-copy {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+    gap: 4px;
+  }
+
+  .memory-game-card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .memory-game-card-title-row strong {
+    color: #1A0F3A;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .memory-game-card-title-row em {
+    border-radius: 999px;
+    color: #fff;
+    font-style: normal;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 2px 9px;
+  }
+
+  .memory-game-card-copy small {
+    color: #6B5E8A;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .memory-game-card-resume {
+    color: #A15C12 !important;
+    font-weight: 800;
+  }
+
+  .memory-game-card-arrow {
+    flex-shrink: 0;
+    font-size: 28px;
+    font-weight: 800;
+  }
+
+  .memory-gallery-note {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 8px 0;
+  }
+
+  .memory-gallery-note span {
+    font-size: 28px;
+  }
+
+  .memory-gallery-note p {
+    margin: 0;
+    color: #6B5E8A;
+    font-size: 12px;
+    font-style: italic;
+    line-height: 1.35;
+  }
+
+  .memory-coming-panel {
+    display: grid;
+    gap: 14px;
+  }
+
+  .memory-coming-intro {
+    margin: 0;
+    color: #9B8BB4;
+    text-align: center;
+    font-size: 14px;
+  }
+
+  .memory-coming-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .memory-coming-card {
+    min-height: 142px;
+    border: 2px dashed;
+    border-radius: 28px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .memory-coming-icon-wrap {
+    position: relative;
+  }
+
+  .memory-coming-icon-wrap > span {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    display: grid;
+    place-items: center;
+    color: #6B5E8A;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    opacity: 0.7;
+  }
+
+  .memory-coming-icon-wrap i {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 24px;
+    height: 24px;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    background: #9B8BB4;
+    color: #fff;
+    display: grid;
+    place-items: center;
+  }
+
+  .memory-coming-card strong {
+    color: #6B5E8A;
+    text-align: center;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.15;
+  }
+
+  .memory-coming-card small {
+    color: #9B8BB4;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .memory-notify-card {
+    border: 2px solid rgba(245, 200, 66, 0.3);
+    border-radius: 28px;
+    background: linear-gradient(90deg, rgba(245, 200, 66, 0.2), rgba(59, 181, 137, 0.2));
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    text-align: left;
+  }
+
+  .memory-notify-card > span:first-child {
+    font-size: 26px;
+    flex-shrink: 0;
+  }
+
+  .memory-notify-card strong {
+    display: block;
+    color: #1A0F3A;
+    font-family: 'Fredoka', system-ui, sans-serif;
+    font-size: 14px;
+  }
+
+  .memory-notify-card small {
+    display: block;
+    margin-top: 2px;
+    color: #6B5E8A;
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  @media (max-height: 720px) {
+    .memory-splash-logo {
+      width: min(64%, 250px);
+      margin-top: 24px;
+    }
+
+    .memory-splash-mountain {
+      width: min(72%, 280px);
+    }
+
+    .memory-splash-badges {
+      margin-top: 14px;
+    }
+
+    .memory-splash-play {
+      margin-top: 18px;
+    }
   }
 }

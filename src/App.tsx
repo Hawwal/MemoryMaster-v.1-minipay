@@ -11,6 +11,7 @@ import { GameScreen } from '@/components/GameScreen';
 import { DualNBackGame } from '@/components/DualNBackGame';
 import { PaymentModal } from '@/components/PaymentModal';
 import { Leaderboard } from '@/components/Leaderboard';
+import { PlayerSettingsDialog, type PlayerProfile } from '@/components/PlayerSettingsDialog';
 import { AdsPage } from '@/pages/AdsPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { createClient } from '@supabase/supabase-js';
@@ -44,6 +45,9 @@ const Home = () => {
     const [leaderboardFilter, setLeaderboardFilter] = useState<'daily' | 'weekly' | 'all-time'>('all-time');
     const [userName, setUserName] = useState('Player');
     const [userHandle, setUserHandle] = useState('player123');
+    const [playerProfile, setPlayerProfile] = useState<PlayerProfile>({ username: 'Player', age: '', email: '' });
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [gameGalleryInitialTab, setGameGalleryInitialTab] = useState<'available' | 'coming'>('available');
     const [leaderboardEntries, setLeaderboardEntries] = useState<any[]>([]);
     const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
     const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -78,8 +82,11 @@ const Home = () => {
     useEffect(() => {
         const savedUserName = localStorage.getItem('userName') || 'Player';
         const savedUserHandle = localStorage.getItem('userHandle') || 'player';
+        const savedAge = localStorage.getItem('playerAge') || '';
+        const savedEmail = localStorage.getItem('playerEmail') || '';
         setUserName(savedUserName);
         setUserHandle(savedUserHandle);
+        setPlayerProfile({ username: savedUserName, age: savedAge, email: savedEmail });
 
         const walletService = new WalletService({
             onToast: (title: string, description: string) => {
@@ -167,7 +174,8 @@ const Home = () => {
     };
 
     // Begin Challenge — goes straight to game, no payment required
-    const handleStartGame = () => {
+    const handleStartGame = (initialTab: 'available' | 'coming' = 'available') => {
+        setGameGalleryInitialTab(initialTab);
         setGameState('gameSelect');
     };
 
@@ -177,6 +185,63 @@ const Home = () => {
 
     const handleSelectDualNBack = () => {
         setGameState('dualNBack');
+    };
+
+    const handleSavePlayerProfile = (profile: PlayerProfile) => {
+        const handle = profile.username
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'player';
+
+        localStorage.setItem('userName', profile.username);
+        localStorage.setItem('userHandle', handle);
+        localStorage.setItem('playerAge', profile.age);
+        localStorage.setItem('playerEmail', profile.email);
+        setUserName(profile.username);
+        setUserHandle(handle);
+        setPlayerProfile(profile);
+        toast({
+            title: 'Profile Saved',
+            description: 'Your player profile will be used across Memory Master games.'
+        });
+    };
+
+    const handleNotifyRequest = async () => {
+        try {
+            if (!('Notification' in window)) {
+                toast({
+                    title: 'Notifications Unavailable',
+                    description: 'This browser does not support device notifications.'
+                });
+                return;
+            }
+
+            const permission = Notification.permission === 'default'
+                ? await Notification.requestPermission()
+                : Notification.permission;
+
+            if (permission === 'granted') {
+                toast({
+                    title: 'Notifications Enabled',
+                    description: 'You will be notified when new games are ready.'
+                });
+                new Notification('Memory Master', {
+                    body: 'Notifications are enabled for new brain games.',
+                });
+            } else {
+                toast({
+                    title: 'Notifications Not Enabled',
+                    description: 'You can enable notifications later from your browser settings.'
+                });
+            }
+        } catch (error: any) {
+            toast({
+                title: 'Notification Request Failed',
+                description: error.message || 'Unable to request notifications right now.',
+                variant: 'destructive'
+            });
+        }
     };
 
     // Called by GameScreen's Home button — saves state if player is on 2nd or last life
@@ -299,7 +364,15 @@ const Home = () => {
             <div className="relative">
                 <SplashScreen
                     onStartGame={handleStartGame}
+                    onOpenSettings={() => setSettingsOpen(true)}
                     savedGameState={savedGameState}
+                />
+                <PlayerSettingsDialog
+                    open={settingsOpen}
+                    onOpenChange={setSettingsOpen}
+                    profile={playerProfile}
+                    onSaveProfile={handleSavePlayerProfile}
+                    leaderboardEntries={leaderboardEntries}
                 />
             </div>
         );
@@ -307,12 +380,24 @@ const Home = () => {
 
     if (gameState === 'gameSelect') {
         return (
-            <GameSelectScreen
-                onBack={() => setGameState('splash')}
-                onSelectMemoryGame={handleSelectMemoryGame}
-                onSelectDualNBack={handleSelectDualNBack}
-                savedGameState={savedGameState}
-            />
+            <>
+                <GameSelectScreen
+                    onBack={() => setGameState('splash')}
+                    onSelectMemoryGame={handleSelectMemoryGame}
+                    onSelectDualNBack={handleSelectDualNBack}
+                    onOpenSettings={() => setSettingsOpen(true)}
+                    onNotifyRequest={handleNotifyRequest}
+                    initialTab={gameGalleryInitialTab}
+                    savedGameState={savedGameState}
+                />
+                <PlayerSettingsDialog
+                    open={settingsOpen}
+                    onOpenChange={setSettingsOpen}
+                    profile={playerProfile}
+                    onSaveProfile={handleSavePlayerProfile}
+                    leaderboardEntries={leaderboardEntries}
+                />
+            </>
         );
     }
 
