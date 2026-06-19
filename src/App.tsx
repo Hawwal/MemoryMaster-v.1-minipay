@@ -6,7 +6,9 @@ import { WalletService, type WalletState } from '@/lib/walletService';
 import { useToast } from '@/hooks/use-toast';
 import CopyToClipboard from 'react-copy-to-clipboard';
 import { SplashScreen } from '@/components/SplashScreen';
+import { GameSelectScreen } from '@/components/GameSelectScreen';
 import { GameScreen } from '@/components/GameScreen';
+import { DualNBackGame } from '@/components/DualNBackGame';
 import { PaymentModal } from '@/components/PaymentModal';
 import { Leaderboard } from '@/components/Leaderboard';
 import { AdsPage } from '@/pages/AdsPage';
@@ -36,7 +38,7 @@ const Home = () => {
         balance: '',
         isLoadingBalance: false
     });
-    const [gameState, setGameState] = useState<'splash' | 'payment' | 'game' | 'leaderboard'>('splash');
+    const [gameState, setGameState] = useState<'splash' | 'gameSelect' | 'payment' | 'game' | 'dualNBack' | 'leaderboard'>('splash');
     const [finalScore, setFinalScore] = useState(0);
     const [finalLevel, setFinalLevel] = useState(1);
     const [leaderboardFilter, setLeaderboardFilter] = useState<'daily' | 'weekly' | 'all-time'>('all-time');
@@ -46,6 +48,8 @@ const Home = () => {
     const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
     const [isProcessingPayment, setIsProcessingPayment] = useState(false);
     const [walletType, setWalletType] = useState<'none' | 'minipay' | 'metamask'>('none');
+    const [paymentReturnState, setPaymentReturnState] = useState<'game' | 'dualNBack'>('game');
+    const [dualNBackContinueToken, setDualNBackContinueToken] = useState(0);
 
     // Holds game progress when player hits Home mid-game on 2nd or last life
     const [savedGameState, setSavedGameState] = useState<SavedGameState | null>(null);
@@ -164,7 +168,15 @@ const Home = () => {
 
     // Begin Challenge — goes straight to game, no payment required
     const handleStartGame = () => {
+        setGameState('gameSelect');
+    };
+
+    const handleSelectMemoryGame = () => {
         setGameState('game');
+    };
+
+    const handleSelectDualNBack = () => {
+        setGameState('dualNBack');
     };
 
     // Called by GameScreen's Home button — saves state if player is on 2nd or last life
@@ -176,7 +188,7 @@ const Home = () => {
             // Player still has full lives — no resume needed
             setSavedGameState(null);
         }
-        setGameState('splash');
+        setGameState('gameSelect');
     };
 
     // Payment for extra lives after game over
@@ -195,7 +207,10 @@ const Home = () => {
                 });
                 setTimeout(() => {
                     setIsProcessingPayment(false);
-                    setGameState('game');
+                    if (paymentReturnState === 'dualNBack') {
+                        setDualNBackContinueToken(prev => prev + 1);
+                    }
+                    setGameState(paymentReturnState);
                 }, 1500);
             } else {
                 throw new Error('Payment failed');
@@ -211,7 +226,8 @@ const Home = () => {
         }
     };
 
-    const handlePaymentRequest = () => {
+    const handlePaymentRequest = (returnState: 'game' | 'dualNBack' = 'game') => {
+        setPaymentReturnState(returnState);
         setGameState('payment');
     };
 
@@ -289,11 +305,22 @@ const Home = () => {
         );
     }
 
+    if (gameState === 'gameSelect') {
+        return (
+            <GameSelectScreen
+                onBack={() => setGameState('splash')}
+                onSelectMemoryGame={handleSelectMemoryGame}
+                onSelectDualNBack={handleSelectDualNBack}
+                savedGameState={savedGameState}
+            />
+        );
+    }
+
     if (gameState === 'payment') {
         return (
             <PaymentModal
                 isOpen={true}
-                onClose={() => setGameState('splash')}
+                onClose={() => setGameState('gameSelect')}
                 onPayment={handlePayment}
                 isLoading={isProcessingPayment}
             />
@@ -306,9 +333,19 @@ const Home = () => {
                 onGameEnd={handleGameEnd}
                 userName={userName}
                 userHandle={userHandle}
-                onPaymentRequest={handlePaymentRequest}
+                onPaymentRequest={() => handlePaymentRequest('game')}
                 onGoHome={handleGoHome}
                 savedGameState={savedGameState}
+            />
+        );
+    }
+
+    if (gameState === 'dualNBack') {
+        return (
+            <DualNBackGame
+                onGoHome={() => setGameState('gameSelect')}
+                onPaymentRequest={() => handlePaymentRequest('dualNBack')}
+                continueToken={dualNBackContinueToken}
             />
         );
     }
@@ -334,7 +371,7 @@ const Home = () => {
                     />
                     <div className="text-center mt-6">
                         <button
-                            onClick={() => setGameState('splash')}
+                            onClick={() => setGameState('gameSelect')}
                             className="bg-game-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-game-primary/90 transition-colors"
                         >
                             Play Again
