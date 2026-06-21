@@ -89,6 +89,7 @@ const CONTRACT_ABI = [
 const DIVVI_CONSUMER_ID = import.meta.env.VITE_DIVVI_CONSUMER_ID || '0xB6Bb848A8E00b77698CAb1626C893dc8ddE4927c';
 const CELO_MAINNET_CHAIN_ID = 42220;
 const GAME_ENTRY_FEE = '0.1';
+const ALREADY_PAID_SELECTOR = '0xd70a0e30';
 
 // ─── Ad Tier Config ───────────────────────────────────────────────────────────
 
@@ -355,7 +356,7 @@ export class WalletService {
         }
 
         // Step 1: Approve
-        this.showToast('Approval Required', `Approve ${amountUsdt} USDT spend in your wallet (1 of 2)`);
+        this.showToast('Memory Master Approval', `Approve ${amountUsdt} USDT spend for Memory Master (1 of 2)`);
         const approveTxHash = await writeContract(config, {
             address: USDT_CONTRACT_ADDRESS,
             abi: USDT_ABI,
@@ -370,7 +371,7 @@ export class WalletService {
         });
 
         // Step 2: Transfer to contract
-        this.showToast(toastLabel, `Confirm ${amountUsdt} USDT payment in your wallet (2 of 2)`);
+        this.showToast(toastLabel, `Confirm ${amountUsdt} USDT payment to Memory Master (2 of 2)`);
         const transferTxHash = await writeContract(config, {
             address: USDT_CONTRACT_ADDRESS,
             abi: USDT_ABI,
@@ -410,6 +411,19 @@ export class WalletService {
 
         const amountInUsdtWei = parseUnits(GAME_ENTRY_FEE, USDT_DECIMALS);
 
+        const hasUnusedPaidEntry = await readContract(config, {
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: 'hasPaidEntry',
+            args: [account.address as `0x${string}`],
+            chainId: CELO_MAINNET_CHAIN_ID,
+        });
+
+        if (hasUnusedPaidEntry) {
+            this.showToast('Memory Master Continue', 'You already have a paid continuation available.');
+            return true;
+        }
+
         const balance = await readContract(config, {
             address: USDT_CONTRACT_ADDRESS,
             abi: USDT_ABI,
@@ -425,7 +439,7 @@ export class WalletService {
             );
         }
 
-        this.showToast('Approval Required', 'Please approve USDT spend in your wallet (1 of 2)');
+        this.showToast('Memory Master Approval', 'Please approve 0.1 USDT spend for Memory Master (1 of 2)');
 
         const approveTxHash = await writeContract(config, {
             address: USDT_CONTRACT_ADDRESS,
@@ -440,7 +454,7 @@ export class WalletService {
             chainId: CELO_MAINNET_CHAIN_ID,
         });
 
-        this.showToast('Payment Required', 'Please confirm entry fee payment (2 of 2)');
+        this.showToast('Memory Master Payment', 'Please confirm the 0.1 USDT continuation payment (2 of 2)');
 
         let referralTag = getReferralTag({
             user: account.address,
@@ -450,12 +464,22 @@ export class WalletService {
             referralTag = `0x${referralTag}`;
         }
 
-        const payTxHash = await writeContract(config, {
-            address: CONTRACT_ADDRESS,
-            abi: CONTRACT_ABI,
-            functionName: 'payEntry',
-            chainId: CELO_MAINNET_CHAIN_ID,
-        });
+        let payTxHash: `0x${string}`;
+        try {
+            payTxHash = await writeContract(config, {
+                address: CONTRACT_ADDRESS,
+                abi: CONTRACT_ABI,
+                functionName: 'payEntry',
+                chainId: CELO_MAINNET_CHAIN_ID,
+            });
+        } catch (error: any) {
+            const errorText = JSON.stringify(error, Object.getOwnPropertyNames(error));
+            if (errorText.includes(ALREADY_PAID_SELECTOR) || errorText.includes('AlreadyPaid')) {
+                this.showToast('Memory Master Continue', 'Your previous paid continuation is still available.');
+                return true;
+            }
+            throw error;
+        }
 
         this.showToast('Transaction Sent', 'Waiting for confirmation...');
 

@@ -843,8 +843,8 @@
 @layer components {
   .memory-new-shell {
     width: min(100vw, 390px);
-    height: min(100dvh, 844px);
-    min-height: 640px;
+    height: 100dvh;
+    min-height: 0;
     margin: 0 auto;
     position: relative;
     overflow: hidden;
@@ -870,6 +870,14 @@
     align-items: center;
     background: radial-gradient(ellipse at 50% 35%, #4A2C8F 0%, #2D1B69 55%, #1A0F3A 100%);
     color: #fff;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    scrollbar-width: none;
+  }
+
+  .memory-splash-new::-webkit-scrollbar {
+    display: none;
   }
 
   .memory-splash-settings {
@@ -958,6 +966,7 @@
     z-index: 1;
     width: calc(100% - 64px);
     min-height: 58px;
+    flex-shrink: 0;
     margin-top: clamp(22px, 4dvh, 34px);
     border: 0;
     border-radius: 24px;
@@ -998,7 +1007,7 @@
   .memory-splash-footer {
     position: relative;
     z-index: 1;
-    margin: auto 0 16px;
+    margin: 14px 0 16px;
     color: rgba(255, 255, 255, 0.3);
     font-size: 12px;
   }
@@ -1321,19 +1330,25 @@
   @media (max-height: 720px) {
     .memory-splash-logo {
       width: min(64%, 250px);
-      margin-top: 24px;
+      margin-top: 18px;
     }
 
     .memory-splash-mountain {
-      width: min(72%, 280px);
+      width: min(68%, 260px);
+      margin-top: -14px;
+    }
+
+    .memory-splash-tagline {
+      margin-top: -12px;
+      font-size: 14px;
     }
 
     .memory-splash-badges {
-      margin-top: 14px;
+      margin-top: 12px;
     }
 
     .memory-splash-play {
-      margin-top: 18px;
+      margin-top: 14px;
     }
   }
 }

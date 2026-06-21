@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { WalletService } from '@/lib/walletService';
 
 type ScreenState = 'start' | 'countdown' | 'playing' | 'summary';
 type GamePhase = 'learning' | 'challenge';
@@ -221,6 +222,9 @@ export const DualNBackGame: React.FC<DualNBackGameProps> = ({ onGoHome, onPaymen
   const playStartedAtRef = useRef<number | null>(null);
   const walletAddressRef = useRef<string | null>(null);
   const startStageRef = useRef<((level: number) => void) | null>(null);
+  const walletServiceRef = useRef<WalletService | null>(null);
+  const hasRecordedSessionRef = useRef(false);
+  const handledContinueTokenRef = useRef(0);
 
   const [screen, setScreen] = useState<ScreenState>('start');
   const [phase, setPhase] = useState<GamePhase>('learning');
@@ -339,6 +343,23 @@ export const DualNBackGame: React.FC<DualNBackGameProps> = ({ onGoHome, onPaymen
       return null;
     }
   }, []);
+
+  useEffect(() => {
+    walletServiceRef.current = new WalletService({ onToast: () => {} });
+    syncWalletAddress();
+
+    if (!hasRecordedSessionRef.current) {
+      hasRecordedSessionRef.current = true;
+      setTimeout(() => {
+        walletServiceRef.current?.recordPlay();
+      }, 2000);
+    }
+
+    return () => {
+      walletServiceRef.current?.destroy();
+      walletServiceRef.current = null;
+    };
+  }, [syncWalletAddress]);
 
   const setPhaseState = (nextPhase: GamePhase) => {
     phaseRef.current = nextPhase;
@@ -808,9 +829,9 @@ export const DualNBackGame: React.FC<DualNBackGameProps> = ({ onGoHome, onPaymen
   }, [clearTimers]);
 
   useEffect(() => {
-    if (continueToken > 0) {
-      resumeFromSnapshot();
-    }
+    if (continueToken <= 0 || handledContinueTokenRef.current === continueToken) return;
+    handledContinueTokenRef.current = continueToken;
+    resumeFromSnapshot();
   }, [continueToken, resumeFromSnapshot]);
 
   useEffect(() => {
